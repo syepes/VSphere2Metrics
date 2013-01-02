@@ -1,0 +1,110 @@
+apply plugin:'groovy'
+apply plugin:'application'
+
+def projectName = 'vSphere2Graphite'
+description = "$projectName - ESXi Performance Metric Integration with Graphite"
+
+group = 'com.allthingsmonitoring.vSphere2Graphite' // Class name
+mainClassName = group
+archivesBaseName = projectName
+distsDirName = 'dist'
+version = '1.0'
+
+def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
+def copyrightString = 'Copyright &#169; 2012 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
+
+
+defaultTasks 'clean','build'
+
+
+// http://svn.codehaus.org/griffon/builders/jidebuilder/trunk/build.gradle
+// http://gparallelizer.googlecode.com/svn/trunk/build.gradle
+configure([compileGroovy, compileTestGroovy]) {
+  //groovyOptions.useAnt = true
+  //compileGroovy.groovyOptions.fork = true
+  groovyOptions.fork(memoryInitialSize: '128M', memoryMaximumSize: '1G')
+  groovyOptions.encoding = 'UTF-8'
+}
+
+compileJava.options.encoding = 'UTF-8'
+
+repositories {
+  mavenLocal()
+  mavenCentral()
+}
+
+dependencies {
+  groovy 'org.codehaus.groovy:groovy:2.0.6'
+  compile 'org.slf4j:slf4j-api:1.7.2',
+          'ch.qos.logback:logback-core:1.0.9',
+          'ch.qos.logback:logback-classic:1.0.9',
+          'org.codehaus.gpars:gpars:1.0-beta-3',
+          'org.codehaus.jsr166-mirror:jsr166y:1.7.0',
+          'net.sf.opencsv:opencsv:2.3',
+          'com.xlson.groovycsv:groovycsv:1.0',
+          'dom4j:dom4j:1.6.1',
+          //'com.cloudbees.thirdparty:vijava:5.1',
+          fileTree(dir: 'libs', include: '*.jar')
+
+  testCompile "junit:junit:4.10"
+}
+
+
+groovydoc {
+  dependsOn classes
+  groovyClasspath = configurations.compile // http://issues.gradle.org/browse/GRADLE-1391
+  destinationDir  = new File(( System.getProperty( 'groovydocDir' ) ?: project.buildDir.path + '/groovydoc' ), ( project.version.contains( '-SNAPSHOT' ) ? '' : project.version ))
+  use = true
+  includePrivate = true
+
+  windowTitle = "$projectName"
+  docTitle = "$projectName"
+  header = "$projectName - v$project.version"
+  footer = copyrightString
+
+  link 'http://static.springsource.org/spring/docs/3.1.x/javadoc-api/', 'org.springframework.'
+  link 'http://download.oracle.com/javase/6/docs/api/',                 'java.'
+  link 'http://groovy.codehaus.org/api/',                               'groovy.', 'org.codehaus.groovy.'
+  link 'http://commons.apache.org/net/apidocs/',                        'org.apache.commons.net.'
+  link 'http://truezip.java.net/apidocs/',                              'de.schlichtherle.'
+}
+
+
+processResources{
+  exclude 'config.groovy'
+  exclude '*.sh'
+}
+
+jar {
+  from ( configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } ) {
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+  }
+  manifest {
+    attributes 'Implementation-Title': project.description,
+               'Implementation-Version': project.version,
+               'Specification-Title': project.description,
+               'Specification-Version': project.version,
+               'Built-By': System.properties['user.name'],
+               'Built-JDK': System.properties['java.version'] + ' (' + System.properties['java.vm.vendor'] + ')',
+               'Built-Date': new Date(),
+               'Author': authorString,
+               'Main-Class': project.group
+               //'Class-path':'.'
+               //'Class-Path': configurations.runtime.collect { it.name }.join(' ')
+  }
+}
+
+
+// src/(main|test)/groovy,resources
+task initProject(description : 'Create empty source directories for all defined sourceSets') {
+  doFirst { println "+Project Initialization" }
+
+  sourceSets*.allSource.srcDirs.flatten().each { File sourceDirectory ->
+    if (!sourceDirectory.exists()) {
+      logger.info "Making folder: $sourceDirectory"  // gradle -i shows this message.
+      sourceDirectory.mkdirs()
+    }
+  }
+}
