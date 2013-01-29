@@ -2,14 +2,7 @@
  * <PRE>
  *  <B>Description</B>
  *   Connects to vSphere and collect performance metrics from all the known Hosts and Guests
- * 
- *  <B>Usage</B>
- *   1. Install the licences: nnmlicense.ovpl PerfSPI -f /tmp/lic.dat
- *   2. Create a NodeGroup or InterfaceGroup that will contain the nodes that we want to collect the performance metrics.
- *   3. Configuration -> Monitoring Configuration: Add the previously created NodeGroup or InterfaceGroup and activate the Performance Monitoring serttings
- *   4. Verify the path of the TOPOLOGY and METRICS : grep HA_PERFSPI_ADAPTER_DIR /var/opt/OV/shared/nnm/conf/ov.conf (nnmenableperfspi.ovpl)
- *   4. Load the file using the jmx-console : service=Locations Manager -> buildLocationsHierarchyFromXML()
- * 
+ *
  *  <B>Other stuff</B>
  *   Author:      Sebastian YEPES F. (mailto:syepes@gmail.com)
  *   Copyright:   Copyright (c) 2012 Sebastian YEPES F.
@@ -17,13 +10,6 @@
  *
  *  <B>Warranty</B>
  *   This software is provided "as is" and without any express or implied warranties, including, without limitation, i am not held responsible for any _damage_ or _loss_ _of_ _data_ produced by this software
- *
- * <B>Changelog</B>
- *    DATE      - BY                   - NOTES
- *    06/06/12  - Sebastian YEPES F.   - Init version.
- *    21/06/12  - Sebastian YEPES F.   - Added parallel vCenter collecting
- *    28/06/12  - Sebastian YEPES F.   - Daemonize, created config file and other fixes
- *    02/07/12  - Sebastian YEPES F.   - Added Host metrics
  *
  * @author Sebastian YEPES FERNANDEZ (syepes@gmail.com)
  */
@@ -63,6 +49,7 @@ import javax.crypto.spec.*
 
 @Slf4j
 class vSphere2Graphite {
+  TimeDuration lastExecTime = new TimeDuration(0, 0, 0, 0)
 
   /** Configuration file location */
   final String CFG_FILE  = 'config.groovy'
@@ -143,7 +130,7 @@ class vSphere2Graphite {
    * Encrypt string
    *
    * @param plaintext String that should be encrypted
-   * @return Encrypted String 
+   * @return Encrypted String
    */
   /*
   private String encrypt(String plaintext) {
@@ -159,7 +146,7 @@ class vSphere2Graphite {
    * Decrypt string
    *
    * @param ciphertext Encrypted String that should be decrypted
-   * @return Decrypted String 
+   * @return Decrypted String
    */
   private String decrypt(String ciphertext) {
     String salt = java.net.InetAddress.getLocalHost().getHostName()
@@ -177,16 +164,16 @@ class vSphere2Graphite {
    * @param vcs URL of the vSphere server
    * @return ServiceInstance
    */
-  def vCenterConnect(vcs) {
+  ServiceInstance vSphereConnect(String vcs) {
     Date timeStart = new Date()
-    def si
+    ServiceInstance si
 
     try {
       si = new ServiceInstance(new URL(vcs), cfg.vcs.user, decrypt(cfg.vcs.pwd), true)
       Date timeEnd = new Date()
-      log.info "Connected to vCenter (${vcs}) in ${TimeCategory.minus(timeEnd,timeStart)}"
+      log.info "Connected to vSphere (${vcs}) in ${TimeCategory.minus(timeEnd,timeStart)}"
     } catch (InvalidLogin e) {
-      log.error "Invalid login vCenter: ${cfg.vcs.user}"
+      log.error "Invalid login vSphere: ${cfg.vcs.user}"
     } catch (RemoteException e) {
       StackTraceUtils.deepSanitize(e)
       log.error "Remote exception: ${getStackTrace(e)}"
@@ -203,17 +190,17 @@ class vSphere2Graphite {
    *
    * @param si ServiceInstance
    */
-  def vCenterDisconnect(si) {
+  void vSphereDisconnect(ServiceInstance si) {
     Date timeStart = new Date()
 
     try {
       si.getServerConnection().logout()
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "vCenterDisconnect: ${getStackTrace(e)}"
+      log.error "vSphereDisconnect: ${getStackTrace(e)}"
     }
     Date timeEnd = new Date()
-    log.info "Disconected to vCenter in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Disconected to vSphere in ${TimeCategory.minus(timeEnd,timeStart)}"
   }
 
   /**
@@ -222,8 +209,8 @@ class vSphere2Graphite {
    * @param si ServiceInstance
    * @return PerformanceManager
    */
-  def getPerformanceManager(si) {
-    def perfMgr
+  PerformanceManager getPerformanceManager(ServiceInstance si) {
+    PerformanceManager perfMgr
 
     try {
       perfMgr = si?.getPerformanceManager()
@@ -241,9 +228,9 @@ class vSphere2Graphite {
    * @param name Name of the VM
    * @return InventoryNavigator
    */
-  def getVM(si,name) {
-    def vm
-    def rootFolder = si.getRootFolder()
+  ManagedEntity getVM(ServiceInstance si, String name) {
+    ManagedEntity vm
+    Folder rootFolder = si.getRootFolder()
     log.info "Getting VM: ${name} from: ${rootFolder.getName()}"
 
     try {
@@ -252,7 +239,6 @@ class vSphere2Graphite {
         log.info "Found ${name} Virtual Machine"
       } else {
         log.error "Not Found ${name} Virtual Machine"
-        vm = null
       }
 
     } catch (RemoteException e) {
@@ -269,9 +255,9 @@ class vSphere2Graphite {
    * @param si ServiceInstance
    * @return InventoryNavigator
    */
-  def getVMs(si) {
-    def vms
-    def rootFolder = si.getRootFolder()
+  ManagedEntity[] getVMs(ServiceInstance si) {
+    ManagedEntity[] vms
+    Folder rootFolder = si.getRootFolder()
     log.info "Getting VMs from: ${rootFolder.getName()}"
 
     try {
@@ -280,7 +266,6 @@ class vSphere2Graphite {
         log.info "Found ${vms.size()} Virtual Machines"
       } else {
         log.error "Not Found ${name} Virtual Machines"
-        vms = null
       }
 
     } catch (RemoteException e) {
@@ -297,9 +282,10 @@ class vSphere2Graphite {
    * @param si ServiceInstance
    * @return InventoryNavigator
    */
-  def getHosts(si) {
-    def hosts
-    def rootFolder = si.getRootFolder()
+  ManagedEntity[] getHosts(ServiceInstance si) {
+    //InventoryNavigator[] hosts
+    ManagedEntity[] hosts
+    Folder rootFolder = si.getRootFolder()
     log.info "Getting ESXi Hosts from: ${rootFolder.getName()}"
 
     try {
@@ -308,7 +294,6 @@ class vSphere2Graphite {
         log.info "Found ${hosts.size()} Host Systems"
       } else {
         log.error "Not Found Host Systems"
-        hosts = null
       }
 
     } catch (RemoteException e) {
@@ -323,22 +308,22 @@ class vSphere2Graphite {
    * Get performace counters and returns a Data strunture containing all there info
    *
    * @param perfMgr A reference to the PerformanceManager used to make the method call.
-   * @return HashMap with all the known performance counters
+   * @return LinkedHashMap with all the known performance counters
    */
-  def getPerformanceCounters(perfMgr) {
+  LinkedHashMap getPerformanceCounters(PerformanceManager perfMgr) {
     LinkedHashMap perfMetrics = [:]
-    def perfCounters = perfMgr?.getPerfCounter()
+    PerfCounterInfo[] perfCounters = perfMgr?.getPerfCounter()
 
     perfCounters.each {
-      def metric = [MetricId:it.getKey(),
-                    Metric:"${it.getGroupInfo().getKey()}.${it.getNameInfo().getKey()}_${it.getRollupType()}-${it.getUnitInfo().getKey()}",
-                    RollupType:it.getRollupType(),
-                    Level:it.getLevel(),
-                    PerDeviceLevel:it.getPerDeviceLevel(),
-                    StatsType:it.getStatsType(),
-                    UnitInfo:it.getUnitInfo().getKey(),
-                    NameInfo:it.getNameInfo().getKey(),
-                    GroupInfo:it.getGroupInfo().getKey()]
+      LinkedHashMap metric = [MetricId:it.getKey(),
+                              Metric:"${it.getGroupInfo().getKey()}.${it.getNameInfo().getKey()}_${it.getRollupType()}-${it.getUnitInfo().getKey()}",
+                              RollupType:it.getRollupType(),
+                              Level:it.getLevel(),
+                              PerDeviceLevel:it.getPerDeviceLevel(),
+                              StatsType:it.getStatsType(),
+                              UnitInfo:it.getUnitInfo().getKey(),
+                              NameInfo:it.getNameInfo().getKey(),
+                              GroupInfo:it.getGroupInfo().getKey()]
 
       perfMetrics[it.getKey()] = metric
     }
@@ -354,13 +339,15 @@ class vSphere2Graphite {
    * @param perfInterval The interval (samplingPeriod) in seconds for which performance statistics are queried
    * @return PerfQuerySpec
    */
-  def createPerfQuerySpec(me, metricIds, maxSample, perfInterval) {
-    def qSpec = new PerfQuerySpec()
+  PerfQuerySpec createPerfQuerySpec(ManagedEntity me, PerfMetricId[] metricIds, int maxSample, int perfInterval) {
+    PerfQuerySpec qSpec = new PerfQuerySpec()
     qSpec.setEntity(me.getMOR())
     //qSpec.setEntity(me.getRuntime().getHost())
 
     // set the maximum of metrics to be return only appropriate in real-time performance collecting
-    qSpec.setMaxSample(maxSample)
+    // Take into account the execution time and get the extra samples.
+    int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20)+3
+    qSpec.setMaxSample(maxSample + execDelaySamples)
 
     qSpec.setMetricId(metricIds)
 
@@ -381,21 +368,21 @@ class vSphere2Graphite {
    * @param vm The ManagedObject managed object whose performance statistics are being queried
    * @return PerfEntityMetricBase The metric values for the specified entity or entities.
    */
-  def getPerfMetrics(perfMgr,maxSample,vm) {
+  PerfEntityMetricBase[] getPerfMetrics(PerformanceManager perfMgr,int maxSample,ManagedEntity vm) {
 
-    def pps = perfMgr.queryPerfProviderSummary(vm)
+    PerfProviderSummary pps = perfMgr.queryPerfProviderSummary(vm)
     int refreshRate = pps.getRefreshRate().intValue()
     log.trace "Collecting Performance Metrics RefreshRate: ${refreshRate}"
 
-    def pmis = perfMgr.queryAvailablePerfMetric(vm, null, null, refreshRate)
+    PerfMetricId[] pmis = perfMgr.queryAvailablePerfMetric(vm, null, null, refreshRate)
     // For the instance property, specify an asterisk (*) to retrieve instance and aggregate data or a zero-length string ("") to retrieve aggregate data only
     pmis.each { it.setInstance("*") }
 
-    def qSpec = createPerfQuerySpec(vm, pmis, maxSample, refreshRate)
+    PerfQuerySpec qSpec = createPerfQuerySpec(vm, pmis, maxSample, refreshRate)
 
     // Use QueryPerf to obtain metrics for multiple entities in a single call.
     // Use QueryPerfComposite to obtain statistics for a single entity with its descendent objects statistics for a host and all its virtual machines, for example.
-    def pValues = perfMgr.queryPerf(qSpec)
+    PerfEntityMetricBase[] pValues = perfMgr.queryPerf(qSpec)
 
     return pValues
   }
@@ -406,10 +393,11 @@ class vSphere2Graphite {
    * @param pValues The metric values for the specified entity or entities
    * @param perfMetrics Performance Counters HashMap
    * @param hi Host information HashMap
-   * @return DS[MNAME] = [ts:v,ts:v]
+   * @return LinkedHashMap DS[MNAME] = [ts:v,ts:v]
    */
-  def getValues(pValues, perfMetrics,hi) {
+  LinkedHashMap getValues(pValues,LinkedHashMap perfMetrics,LinkedHashMap hi) {
     LinkedHashMap metricData = [:]
+
     for (pValue in pValues) {
 
       if (pValue instanceof PerfEntityMetric) {
@@ -485,9 +473,10 @@ class vSphere2Graphite {
           metricData[mpath] = [tStamp,it.getValue().split(',')].transpose().inject([:]) { a, b -> a[b[0]] = b[1]; a }
         }
 
-        return metricData
       } else { log.error "UnExpected sub-type of PerfEntityMetricBase: ${pValue.class}" }
     }
+
+    return metricData
   }
 
 
@@ -503,12 +492,13 @@ class vSphere2Graphite {
    * @param vms The interval (samplingPeriod) in seconds for which performance statistics are queried
    * @param metricsData Referenca to the shared variable
    */
-  def getGuestMetrics(si,perfMgr,perfMetrics,hi,maxSample,vms,metricsData) {
+  void getGuestMetrics(ServiceInstance si,PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
 
     vms.each { vm ->
       // Can not collect metrics if VM is not Running
       if (vm?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
-      def vmName,esxHost,pValues
+      PerfEntityMetricBase[] pValues
+      String vmName,esxHost
 
       try {
         vmName = vm.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
@@ -540,12 +530,13 @@ class vSphere2Graphite {
    * @param hosts The interval (samplingPeriod) in seconds for which performance statistics are queried
    * @param metricsData Referenca to the shared variable
    */
-  def getHostsMetrics(perfMgr,perfMetrics,hi,maxSample,hosts,metricsData) {
+  void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
 
     hosts.each { host ->
       // Can not collect metrics if Host is not Running
       if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
-      def esxHost,pValues
+      PerfEntityMetricBase[] pValues
+      String esxHost
 
       try {
         esxHost = host.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
@@ -569,9 +560,9 @@ class vSphere2Graphite {
    * Collects datastore, disk and storagePath information
    *
    * @param hosts The ManagedObject managed object whose performance statistics are being queried
-   * @return Host information HashMap
+   * @return LinkedHashMap Host information HashMap
    */
-  def getHostInfo(hosts) {
+  LinkedHashMap getHostInfo(ManagedEntity[] hosts) {
     LinkedHashMap hostInfo = [:]
     LinkedHashMap dsInfo = [:]
     LinkedHashMap diskInfo = [:]
@@ -580,23 +571,23 @@ class vSphere2Graphite {
     hosts.each { host ->
       String hostName = host.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
       // Get datastore info
-      def hds = host.getHostStorageSystem() // HostStorageSystem
-      def vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
-      def mis = vi.getMountInfo() // HostFileSystemMountInfo
+      HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
+      HostFileSystemVolumeInfo vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
+      HostFileSystemMountInfo[] mis = vi.getMountInfo() // HostFileSystemMountInfo
       mis.each {
-        def hfsv = it.getVolume() // HostFileSystemVolume
+        HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
         dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
       }
 
       // Get disk info
-      def hsdi = hds.getStorageDeviceInfo() // HostStorageDeviceInfo
-      def sls = hsdi.getScsiLun()
+      HostStorageDeviceInfo hsdi = hds.getStorageDeviceInfo() // HostStorageDeviceInfo
+      ScsiLun[] sls = hsdi.getScsiLun()
       sls.each { diskInfo[it.getCanonicalName()] = [type:it.getLunType().trim(), vendor:it.getVendor().trim(), uuid:it.getUuid(), host:hostName] }
 
       // Get Multipath info
-      def hmi = hsdi.getMultipathInfo() // HostMultipathInfo
+      HostMultipathInfo hmi = hsdi.getMultipathInfo() // HostMultipathInfo
       hmi.getLun().each { // HostMultipathInfoLogicalUnit
-        def hmips = it.getPath() // HostMultipathInfoPath
+        HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
         hmips.each { p ->
           pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName()]
         }
@@ -625,7 +616,7 @@ class vSphere2Graphite {
 
 
   // Dor debugging
-  def displayValues(pValues, perfMetrics) {
+  void displayValues(pValues, LinkedHashMap perfMetrics) {
     for (pValue in pValues) {
       println "Entity: ${pValue.getEntity().getType()} : ${pValue.getEntity().get_value()}"
       println "Entity: ${pValue.getEntity().class.methods.name.sort()}"
@@ -658,7 +649,7 @@ class vSphere2Graphite {
    *
    * @param data Metrics Data structure
    */
-  def sendMetrics2Graphite(data) {
+  void sendMetrics2Graphite(LinkedHashMap data) {
     Date timeStart = new Date()
     String nodeIdentifier = java.net.InetAddress.getLocalHost().getHostName()
     int sentCount = 0
@@ -690,7 +681,7 @@ class vSphere2Graphite {
               // Only send metrics if they are different than 0
               if (mvalue) {
                 if (progessCount >= 10000) {
-                  log.debug "Sending ${hash.value['type']} Metrics to Graphite (${cfg.graphite.host}:${cfg.graphite.port}) using 'TCP' from (${nodeIdentifier}): ${msg} (${new Date(ts.key.toLong()).format("hh:mm:ss - dd/MM/yyyy")})"
+                  log.debug "Sending ${hash.value['type']} Metrics to Graphite (${cfg?.graphite?.host}:${cfg?.graphite?.port}) using 'TCP' from (${nodeIdentifier}): ${msg} (${new Date(ts.key.toLong()).format("hh:mm:ss - dd/MM/yyyy")})"
                   progessCount = 0
                 }
 
@@ -721,7 +712,7 @@ class vSphere2Graphite {
   /////////////////////////////////////
   //  Events
   ////////////////
-  def displayEvent(e) {
+  void displayEvent(e) {
      log.info "Type: ${e.getClass().getName()}"
      log.info "Key: ${e.getKey()}"
      log.info "ChainId: ${e.getChainId()}"
@@ -735,7 +726,7 @@ class vSphere2Graphite {
    }
 
   // def em = si.getEventManager()
-  def getEvants(si,em) {
+  def getEvants(ServiceInstance si,em) {
     // create a filter spec for querying events
     def efs = new EventFilterSpec()
 
@@ -768,15 +759,15 @@ class vSphere2Graphite {
     //uFilter.setUserList(userFilterList)
 
     def events = em.queryEvents(efs)
-    log.info "Received ${events?.size()} events from vCenter"
+    log.info "Received ${events?.size()} events from vSphere"
     return events
   }
 
 
   // Converts a time stamp from one Time zone (sourceTZ) another (destTZ)
-  def convertTimeZone(String time, String sourceTZ, String destTZ) {
+  Date convertTimeZone(String time, String sourceTZ, String destTZ) {
     final String DATE_TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'"
-    def sdf = new SimpleDateFormat(DATE_TIME_FORMAT)
+    SimpleDateFormat sdf = new SimpleDateFormat(DATE_TIME_FORMAT)
     Date specifiedTime
 
     try {
@@ -810,43 +801,45 @@ class vSphere2Graphite {
    *
    * @param vcs URL list of the vSphere servers
    */
-  def collectVMMetrics(vcs) {
+  void collectVMMetrics(ArrayList vcs) {
+    Date timeStart = new Date()
+
     GParsPool.withPool(cfg?.vcs?.urls.size()) {
-      Date timeStart = new Date()
-      log.info "Start Collecting vCenter Metrics in parallel using ${cfg?.vcs?.urls.size()}/${PoolUtils.retrieveDefaultPoolSize()} Threads/Max (PoolSize)"
+      log.info "Start Collecting vSphere Metrics in parallel using PoolSize: ${cfg?.vcs?.urls.size()}/${PoolUtils.retrieveDefaultPoolSize()} (Current/Max) / Last execution time: ${lastExecTime}"
 
       vcs.eachParallel { vc ->
-        def si = vCenterConnect(vc)
+        ServiceInstance si = vSphereConnect(vc)
         if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
 
         // Find and create p}rformance metrics (counters) hash table
-        def perfMgr = getPerformanceManager(si)
-        def perfMetrics = getPerformanceCounters(perfMgr)
+        PerformanceManager perfMgr = getPerformanceManager(si)
+        LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
 
-        def hosts = getHosts(si) // Get Hosts
-        def hi = getHostInfo(hosts) // Get Host info
-        def guests = getVMs(si) // Get VMs
+        ManagedEntity[] hosts = getHosts(si) // Get Hosts
+        LinkedHashMap hi = getHostInfo(hosts) // Get Host info
+        ManagedEntity[] guests = getVMs(si) // Get VMs
 
         // Collect Host and Guest performance metrics
         LinkedHashMap metricsData = [:]
         getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
         getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
 
-        vCenterDisconnect(si)
+        vSphereDisconnect(si)
 
         // Send metrics
         sendMetrics2Graphite(metricsData)
       }
-
-      Date timeEnd = new Date()
-      log.info "Finished Collecting vCenter Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
     }
+
+    Date timeEnd = new Date()
+    lastExecTime = TimeCategory.minus(timeEnd,timeStart)
+    log.info "Finished Collecting vSphere Metrics in ${lastExecTime}"
   }
 
 
 
 
-  /** 
+  /**
    * Main execution loop
    *
    */

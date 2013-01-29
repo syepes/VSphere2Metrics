@@ -24,21 +24,24 @@ configure([compileGroovy, compileTestGroovy]) {
   //compileGroovy.groovyOptions.fork = true
   groovyOptions.fork(memoryInitialSize: '128M', memoryMaximumSize: '1G')
   groovyOptions.encoding = 'UTF-8'
+  //groovyOptions.optimizationOptions.indy = true
 }
 
 compileJava.options.encoding = 'UTF-8'
 
 repositories {
   mavenLocal()
+  maven { url 'http://repository.codehaus.org/' }
   mavenCentral()
 }
 
 dependencies {
-  groovy 'org.codehaus.groovy:groovy:2.0.6'
-  compile 'org.slf4j:slf4j-api:1.7.2',
+  //compile 'org.codehaus.groovy:groovy:2.1.0:indy',
+  compile 'org.codehaus.groovy:groovy:2.1.0',
+          'org.slf4j:slf4j-api:1.7.2',
           'ch.qos.logback:logback-core:1.0.9',
           'ch.qos.logback:logback-classic:1.0.9',
-          'org.codehaus.gpars:gpars:1.0-beta-3',
+          'org.codehaus.gpars:gpars:1.0.0',
           'org.codehaus.jsr166-mirror:jsr166y:1.7.0',
           'net.sf.opencsv:opencsv:2.3',
           'com.xlson.groovycsv:groovycsv:1.0',
@@ -91,8 +94,6 @@ jar {
                'Built-Date': new Date(),
                'Author': authorString,
                'Main-Class': project.group
-               //'Class-path':'.'
-               //'Class-Path': configurations.runtime.collect { it.name }.join(' ')
   }
 }
 
