@@ -8,7 +8,7 @@ group = 'com.allthingsmonitoring.vSphere2Graphite' // Class name
 mainClassName = group
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.0'
+version = '1.1'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2012 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
@@ -36,8 +36,9 @@ repositories {
 }
 
 dependencies {
-  //compile 'org.codehaus.groovy:groovy:2.1.0:indy',
-  compile 'org.codehaus.groovy:groovy:2.1.0',
+  //compile 'org.codehaus.groovy:groovy:2.1.1:indy',
+  compile 'org.codehaus.groovy:groovy:2.1.1',
+          'commons-cli:commons-cli:1.2',
           'org.slf4j:slf4j-api:1.7.2',
           'ch.qos.logback:logback-core:1.0.9',
           'ch.qos.logback:logback-classic:1.0.9',

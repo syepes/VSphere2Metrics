@@ -50,6 +50,7 @@ import javax.crypto.spec.*
 @Slf4j
 class vSphere2Graphite {
   TimeDuration lastExecTime = new TimeDuration(0, 0, 0, 0)
+  TimeDuration startFromExecTime = new TimeDuration(0, 0, 0, 0)
 
   /** Configuration file location */
   final String CFG_FILE  = 'config.groovy'
@@ -345,9 +346,16 @@ class vSphere2Graphite {
     //qSpec.setEntity(me.getRuntime().getHost())
 
     // set the maximum of metrics to be return only appropriate in real-time performance collecting
-    // Take into account the execution time and get the extra samples.
-    int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20)+3
-    qSpec.setMaxSample(maxSample + execDelaySamples)
+
+    if (startFromExecTime.toMilliseconds()){
+      // Retrieve the numbers of samples passed by the parameter 'sf'
+      qSpec.setMaxSample(Math.round((startFromExecTime.toMilliseconds()/1000)/20).toInteger())
+    } else {
+      // Take into account the execution time and get the extra samples.
+      int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+      qSpec.setMaxSample(maxSample + execDelaySamples)
+    }
+
 
     qSpec.setMetricId(metricIds)
 
@@ -796,6 +804,86 @@ class vSphere2Graphite {
     new Date().parse("yyyy-MM-dd'T'HH:mm:ss'Z'", sdf.format(specifiedTime))
   }
 
+
+
+  /**
+   * Dump available counters in vSphere
+   *
+   */
+  void dumpCounters() {
+    Date timeStart = new Date()
+    log.info "Getting available Counters in vSphere"
+
+    ArrayList vcs = cfg?.vcs?.urls
+    vcs.each { vc ->
+      ServiceInstance si = vSphereConnect(vc)
+      if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
+
+      // Find and create p}rformance metrics (counters) hash table
+      PerformanceManager perfMgr = getPerformanceManager(si)
+      LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
+      vSphereDisconnect(si)
+
+      println "vSphere: ${vc}"
+      perfMetrics.each { c ->
+        println "Counter ID: ${c.key}"
+        c.value.each {
+         println "\t${it}"
+        }
+      }
+    }
+
+    Date timeEnd = new Date()
+    log.info "Finished Collecting vSphere Counters in ${TimeCategory.minus(timeEnd,timeStart)}"
+  }
+
+
+  /**
+   * Dump metrics
+   *
+   * 3 Samples + startfrom
+   */
+  void dumpMetrics() {
+    Date timeStart = new Date()
+    log.info "Start Collecting vSphere Metrics"
+
+    ArrayList vcs = cfg?.vcs?.urls
+    vcs.each { vc ->
+      ServiceInstance si = vSphereConnect(vc)
+      if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
+
+      // Find and create p}rformance metrics (counters) hash table
+      PerformanceManager perfMgr = getPerformanceManager(si)
+      LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
+
+      ManagedEntity[] hosts = getHosts(si) // Get Hosts
+      LinkedHashMap hi = getHostInfo(hosts) // Get Host info
+      ManagedEntity[] guests = getVMs(si) // Get VMs
+
+      // Collect Host and Guest performance metrics
+      LinkedHashMap metricsData = [:]
+      getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
+      getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
+
+      vSphereDisconnect(si)
+
+      // Print metrics
+      println "vSphere: ${vc}"
+      metricsData.each { n ->
+        println "${n.key}:"
+        n.value.each {
+          println "\t${it.key}: ${it.value}"
+        }
+      }
+    }
+
+    Date timeEnd = new Date()
+    log.info "Finished Collecting vSphere Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+  }
+
+
+
+
   /**
    * Collect, Process and send the VM Metrics in Parallel
    *
@@ -836,7 +924,27 @@ class vSphere2Graphite {
     log.info "Finished Collecting vSphere Metrics in ${lastExecTime}"
   }
 
+  /**
+   * Run as daemon the Collecting processes
+   *
+   */
+  void runAsDaemon() {
+    try {
+      while(true){
+        // Collect VM Metrics
+        collectVMMetrics(cfg?.vcs?.urls)
 
+        System.gc()
+
+        // Last 1 Minute (3x20s = 60s) / Last 2 Minute (6x20s = 120s) / Last 5 Minute (15x20s = 300s) / Last 10 Minute (30x20s = 600s)
+        sleep((cfg?.vcs?.perf_max_samples*20)*1000)
+      }
+    } catch (Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "runAsDaemon exception: ${getStackTrace(e)}"
+      throw new RuntimeException("runAsDaemon exception: ${getStackTrace(e)}")
+    }
+  }
 
 
   /**
@@ -846,20 +954,34 @@ class vSphere2Graphite {
   static main(args) {
     def main = new vSphere2Graphite()
 
-    try {
-      while(true){
-        // Collect VM Metrics
-        main.collectVMMetrics(main?.cfg?.vcs?.urls)
+    CliBuilder cli = new CliBuilder(usage: '[-h] [-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
+    cli.h(longOpt:'help', 'Usage information')
+    cli.dc(longOpt:'dumpcounters', 'Dump available counters, OPTIONAL', required:false)
+    cli.dm(longOpt:'dumpmetrics', 'Dump Metrics, OPTIONAL', required:false)
+    cli.sf(longOpt:'startfrom', 'Start from last samples (Real-Time (1..60)min), OPTIONAL', argName:'Mins', required:false, type:int, args:1)
 
-        System.gc()
+    OptionAccessor opt = cli.parse(args)
+    if (!opt) return
 
-        // Last 1 Minute (3x20s = 60s) / Last 2 Minute (6x20s = 120s) / Last 5 Minute (15x20s = 300s) / Last 10 Minute (30x20s = 600s)
-        sleep((main.cfg.vcs.perf_max_samples*20)*1000)
+    // Parse 'Start from' parameter
+    if (opt.sf){
+      // Maximum allowed samples is 180 (real-time)
+      if ((1..60).contains(opt.sf.toInteger())){
+        main.startFromExecTime = new TimeDuration(0, opt.sf.toInteger(), 0, 0)
+      } else {
+        println "The start from parameter '${opt.sf}' is Out of range (1..60)"
+        return
       }
-    } catch (Exception e) {
-      StackTraceUtils.deepSanitize(e)
-      log.error "Initialization exception: ${main.getStackTrace(e)}"
-      throw new RuntimeException("Initialization exception: ${main.getStackTrace(e)}")
+    }
+
+    if (opt.dc){
+      main.dumpCounters()
+    } else if (opt.dm){
+      main.dumpMetrics()
+    } else if (opt.h | opt.arguments().size() != 0){
+      cli.usage()
+    } else {
+      main.runAsDaemon()
     }
   }
 }
