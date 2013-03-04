@@ -503,13 +503,14 @@ class vSphere2Graphite {
   void getGuestMetrics(ServiceInstance si,PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
 
     vms.each { vm ->
-      // Can not collect metrics if VM is not Running
-      if (vm?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
       PerfEntityMetricBase[] pValues
       String vmName,esxHost
 
       try {
-        vmName = vm.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        // Can not collect metrics if VM is not Running
+        if (vm?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
+
+        vmName = vm?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
         esxHost = new HostSystem(si.getServerConnection(), vm.getRuntime().getHost()).getSummary().getConfig().getName()
         esxHost = esxHost.split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase() // Get only the hostname of the FQDN
 
@@ -541,13 +542,14 @@ class vSphere2Graphite {
   void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
 
     hosts.each { host ->
-      // Can not collect metrics if Host is not Running
-      if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
       PerfEntityMetricBase[] pValues
       String esxHost
 
       try {
-        esxHost = host.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        // Can not collect metrics if Host is not Running
+        if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
+
+        esxHost = host?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
 
         pValues = getPerfMetrics(perfMgr,maxSample,host)
       } catch (Exception e) {
@@ -577,43 +579,47 @@ class vSphere2Graphite {
     LinkedHashMap pathInfo = [:]
 
     hosts.each { host ->
-      String hostName = host.getSummary().getConfig().getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
-      // Get datastore info
-      HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
-      HostFileSystemVolumeInfo vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
-      HostFileSystemMountInfo[] mis = vi.getMountInfo() // HostFileSystemMountInfo
-      mis.each {
-        HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
-        dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
-      }
-
-      // Get disk info
-      HostStorageDeviceInfo hsdi = hds.getStorageDeviceInfo() // HostStorageDeviceInfo
-      ScsiLun[] sls = hsdi.getScsiLun()
-      sls.each { diskInfo[it.getCanonicalName()] = [type:it.getLunType().trim(), vendor:it.getVendor().trim(), uuid:it.getUuid(), host:hostName] }
-
-      // Get Multipath info
-      HostMultipathInfo hmi = hsdi.getMultipathInfo() // HostMultipathInfo
-      hmi.getLun().each { // HostMultipathInfoLogicalUnit
-        HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
-        hmips.each { p ->
-          pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName()]
+      try{
+        String hostName = host?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        // Get datastore info
+        HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
+        HostFileSystemVolumeInfo vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
+        HostFileSystemMountInfo[] mis = vi.getMountInfo() // HostFileSystemMountInfo
+        mis.each {
+          HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
+          dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
         }
-      }
 
-      // Link paths with disks
-      pathInfo.each { p ->
-        diskInfo.each { d ->
-          if (p.value['id'] == d.value['uuid']) {
-           if (d.value['type'] == 'cdrom') {
-             pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
-           } else {
-             pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
-           }
+        // Get disk info
+        HostStorageDeviceInfo hsdi = hds.getStorageDeviceInfo() // HostStorageDeviceInfo
+        ScsiLun[] sls = hsdi.getScsiLun()
+        sls.each { diskInfo[it.getCanonicalName()] = [type:it.getLunType().trim(), vendor:it.getVendor().trim(), uuid:it.getUuid(), host:hostName] }
+
+        // Get Multipath info
+        HostMultipathInfo hmi = hsdi.getMultipathInfo() // HostMultipathInfo
+        hmi.getLun().each { // HostMultipathInfoLogicalUnit
+          HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
+          hmips.each { p ->
+            pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName()]
           }
         }
-      }
 
+        // Link paths with disks
+        pathInfo.each { p ->
+          diskInfo.each { d ->
+            if (p.value['id'] == d.value['uuid']) {
+             if (d.value['type'] == 'cdrom') {
+               pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
+             } else {
+               pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
+             }
+            }
+          }
+        }
+      }catch(Exception e){
+        StackTraceUtils.deepSanitize(e)
+        log.error "getHostInfo: ${getStackTrace(e)}"
+      }
     }
 
     hostInfo['datastore'] = dsInfo
