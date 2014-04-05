@@ -239,7 +239,7 @@ class vSphere2Graphite {
       if (vm){
         log.info "Found ${name} Virtual Machine"
       } else {
-        log.error "Not Found ${name} Virtual Machine"
+        log.error "Did not find ${name} Virtual Machine"
       }
 
     } catch (RemoteException e) {
@@ -266,7 +266,7 @@ class vSphere2Graphite {
       if (vms){
         log.info "Found ${vms.size()} Virtual Machines"
       } else {
-        log.error "Not Found ${name} Virtual Machines"
+        log.warn "Did not find any Virtual Machines"
       }
 
     } catch (RemoteException e) {
@@ -284,7 +284,6 @@ class vSphere2Graphite {
    * @return InventoryNavigator
    */
   ManagedEntity[] getHosts(ServiceInstance si) {
-    //InventoryNavigator[] hosts
     ManagedEntity[] hosts
     Folder rootFolder = si.getRootFolder()
     log.info "Getting ESXi Hosts from: ${rootFolder.getName()}"
@@ -294,7 +293,7 @@ class vSphere2Graphite {
       if (hosts) {
         log.info "Found ${hosts.size()} Host Systems"
       } else {
-        log.error "Not Found Host Systems"
+        log.error "Did not find any Host Systems"
       }
 
     } catch (RemoteException e) {
@@ -346,8 +345,7 @@ class vSphere2Graphite {
     //qSpec.setEntity(me.getRuntime().getHost())
 
     // set the maximum of metrics to be return only appropriate in real-time performance collecting
-
-    if (startFromExecTime.toMilliseconds()){
+    if (startFromExecTime.toMilliseconds()) {
       // Retrieve the numbers of samples passed by the parameter 'sf'
       qSpec.setMaxSample(Math.round((startFromExecTime.toMilliseconds()/1000)/20).toInteger())
     } else {
@@ -414,11 +412,6 @@ class vSphere2Graphite {
       } else if (pValue instanceof PerfEntityMetricCSV) {
         log.trace "Processing +PerfEntityMetricCSV: ${pValue.getEntity().getType()} (${pValue.getEntity().get_value()})"
 
-        //def A =  ['One', 'Two', 'Three', 'Four', 'Five']
-        //def B =  ['1', '2', '3', '4', '5']
-        //[A, B].transpose().inject([:]) { a, b -> a[b[0]] = b[1]; a }
-        // Result: [One:1, Two:2, Three:3, Four:4, Five:5]
-
         // Get the odd (refreshRate) and even (Time Stamp) elements out of a list
         def (rRate,tStamp) = pValue.getSampleInfoCSV().tokenize(',').collate( 2 ).transpose()
 
@@ -433,7 +426,7 @@ class vSphere2Graphite {
           String instName
 
           // Organize the instance name depending on the metrics
-          if (!instID ) {
+          if (!instID) {
             instName = 'avg'
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^datastore.*/) {
             if (hi['datastore'][instID]?.containsKey('type')) {
@@ -450,7 +443,7 @@ class vSphere2Graphite {
             }
 
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^storagePath.*/) {
-            if (hi['storagePath'][instID]?.containsKey('pathname')){
+            if (hi['storagePath'][instID]?.containsKey('pathname')) {
               instName = "${hi['storagePath'][instID]['pathname']}"
             } else {
               log.warn "The storagePath Instance: ${instID} has no pathname"
@@ -478,6 +471,11 @@ class vSphere2Graphite {
             mpath = "FIXME.${perfMetrics[it.getId().getCounterId()]['Metric']}"
           }
 
+          // Merge back the Time Stamps and Values:
+          // def A =  ['One', 'Two', 'Three', 'Four', 'Five']
+          // def B =  ['1', '2', '3', '4', '5']
+          // [A, B].transpose().inject([:]) { a, b -> a[b[0]] = b[1]; a }
+          // Result: [One:1, Two:2, Three:3, Four:4, Five:5]
           metricData[mpath] = [tStamp,it.getValue().split(',')].transpose().inject([:]) { a, b -> a[b[0]] = b[1]; a }
         }
 
@@ -579,7 +577,7 @@ class vSphere2Graphite {
     LinkedHashMap pathInfo = [:]
 
     hosts.each { host ->
-      try{
+      try {
         String hostName = host?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
         // Get datastore info
         HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
@@ -587,7 +585,9 @@ class vSphere2Graphite {
         HostFileSystemMountInfo[] mis = vi.getMountInfo() // HostFileSystemMountInfo
         mis.each {
           HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
-          dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
+          if (hfsv.metaClass.respondsTo(hfsv, 'getUuid')) {
+            dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
+          } else { log.debug "getHostInfo: Type:${hfsv.type} (${hfsv.getClass().getName()})" }
         }
 
         // Get disk info
@@ -608,7 +608,7 @@ class vSphere2Graphite {
         pathInfo.each { p ->
           diskInfo.each { d ->
             if (p.value['id'] == d.value['uuid']) {
-             if (d.value['type'] == 'cdrom') {
+             if (d.value['type']?.toLowerCase() == 'cdrom') {
                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
              } else {
                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
@@ -616,7 +616,7 @@ class vSphere2Graphite {
             }
           }
         }
-      }catch(Exception e){
+      } catch(Exception e) {
         StackTraceUtils.deepSanitize(e)
         log.error "getHostInfo: ${getStackTrace(e)}"
       }
@@ -675,7 +675,7 @@ class vSphere2Graphite {
       socket = new Socket(cfg.graphite.host, cfg.graphite.port)
 
       data.each { node ->
-        node.each { hash  ->
+        node.each { hash ->
           hash.value['Metrics'].each { metric ->
             metric.value.each { ts ->
               log.trace "Type:${hash.value['type']} / Host:${hash.value['Host']} / VM:${node.key} / Metric:${metric.key} / Val:${ts.value} / TS:${ts.key}"
@@ -690,17 +690,15 @@ class vSphere2Graphite {
               BigDecimal mvalue = (ts.value.toString().isEmpty()) ? 0 : ts.value.toBigDecimal()
               int mtimes = ts.key
               StringBuilder msg = new StringBuilder()
-              msg << "${mpath} ${mvalue} ${mtimes}"
+              msg << "${mpath} ${mvalue} ${mtimes}\n"
 
               // Only send metrics if they are different than 0
               if (mvalue) {
                 if (progessCount >= 10000) {
-                  log.debug "Sending ${hash.value['type']} Metrics to Graphite (${cfg?.graphite?.host}:${cfg?.graphite?.port}) using 'TCP' from (${nodeIdentifier}): ${msg} (${new Date(ts.key.toLong()).format("hh:mm:ss - dd/MM/yyyy")})"
+                  log.debug "Sending ${hash.value['type']} Metric to Graphite (${cfg?.graphite?.host}:${cfg?.graphite?.port}) using 'TCP' from (${nodeIdentifier}): ${msg.toString().trim()} (${new Date(ts.key.toLong()).format("hh:mm:ss - dd/MM/yyyy")})"
                   progessCount = 0
                 }
 
-                //msg <<= '\n'
-                msg << '\n'
                 Writer writer = new OutputStreamWriter(socket.getOutputStream())
                 writer.write(msg.toString())
                 writer.flush()
@@ -719,7 +717,7 @@ class vSphere2Graphite {
       socket?.close()
     }
     Date timeEnd = new Date()
-    log.info "Finished sending Metrics ${sentCount} to Graphite in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Finished sending ${sentCount} Metrics to Graphite in ${TimeCategory.minus(timeEnd,timeStart)}"
   }
 
 
@@ -785,7 +783,7 @@ class vSphere2Graphite {
     Date specifiedTime
 
     try {
-      if (sourceTZ != null){
+      if (sourceTZ != null) {
         sdf.setTimeZone(TimeZone.getTimeZone(sourceTZ))
       } else {
         sdf.setTimeZone(TimeZone.getDefault()) // default to server's timezone
@@ -834,7 +832,7 @@ class vSphere2Graphite {
       perfMetrics.each { c ->
         println "Counter ID: ${c.key}"
         c.value.each {
-         println "\t${it}"
+          println "\t${it}"
         }
       }
     }
@@ -927,7 +925,7 @@ class vSphere2Graphite {
 
     Date timeEnd = new Date()
     lastExecTime = TimeCategory.minus(timeEnd,timeStart)
-    log.info "Finished Collecting vSphere Metrics in ${lastExecTime}"
+    log.info "Finished Collecting and Sending vSphere Metrics in ${lastExecTime}"
   }
 
   /**
@@ -936,7 +934,7 @@ class vSphere2Graphite {
    */
   void runAsDaemon() {
     try {
-      while(true){
+      while(true) {
         // Collect VM Metrics
         collectVMMetrics(cfg?.vcs?.urls)
 
@@ -960,6 +958,11 @@ class vSphere2Graphite {
   static main(args) {
     def main = new vSphere2Graphite()
 
+    addShutdownHook {
+      log.info "Shuting down app..."
+    }
+
+
     CliBuilder cli = new CliBuilder(usage: '[-h] [-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
     cli.h(longOpt:'help', 'Usage information')
     cli.dc(longOpt:'dumpcounters', 'Dump available counters, OPTIONAL', required:false)
@@ -970,9 +973,9 @@ class vSphere2Graphite {
     if (!opt) return
 
     // Parse 'Start from' parameter
-    if (opt.sf){
+    if (opt.sf) {
       // Maximum allowed samples is 180 (real-time)
-      if ((1..60).contains(opt.sf.toInteger())){
+      if ((1..60).contains(opt.sf.toInteger())) {
         main.startFromExecTime = new TimeDuration(0, opt.sf.toInteger(), 0, 0)
       } else {
         println "The start from parameter '${opt.sf}' is Out of range (1..60)"
@@ -980,11 +983,11 @@ class vSphere2Graphite {
       }
     }
 
-    if (opt.dc){
+    if (opt.dc) {
       main.dumpCounters()
-    } else if (opt.dm){
+    } else if (opt.dm) {
       main.dumpMetrics()
-    } else if (opt.h | opt.arguments().size() != 0){
+    } else if (opt.h | opt.arguments().size() != 0) {
       cli.usage()
     } else {
       main.runAsDaemon()

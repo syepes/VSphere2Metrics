@@ -8,10 +8,10 @@ group = 'com.allthingsmonitoring.vSphere2Graphite' // Class name
 mainClassName = group
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.1'
+version = '1.2'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
-def copyrightString = 'Copyright &#169; 2012 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
+def copyrightString = 'Copyright &#169; 2014 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
 
 
 defaultTasks 'clean','build'
@@ -27,7 +27,12 @@ configure([compileGroovy, compileTestGroovy]) {
   //groovyOptions.optimizationOptions.indy = true
 }
 
-compileJava.options.encoding = 'UTF-8'
+//configurations.compile.transitive = false
+compileJava {
+  options.encoding = 'UTF-8'
+  sourceCompatibility = 1.7
+  targetCompatibility = 1.7
+}
 
 repositories {
   mavenLocal()
@@ -36,21 +41,22 @@ repositories {
 }
 
 dependencies {
-  //compile 'org.codehaus.groovy:groovy:2.1.1:indy',
-  compile 'org.codehaus.groovy:groovy:2.1.1',
-          'commons-cli:commons-cli:1.2',
-          'org.slf4j:slf4j-api:1.7.2',
-          'ch.qos.logback:logback-core:1.0.9',
-          'ch.qos.logback:logback-classic:1.0.9',
-          'org.codehaus.gpars:gpars:1.0.0',
+  compile 'org.codehaus.groovy:groovy:2.+',
+          'commons-cli:commons-cli:1.+',
+          'org.slf4j:slf4j-api:1.+',
+          'ch.qos.logback:logback-core:1.+',
+          'ch.qos.logback:logback-classic:1.+',
+          'org.codehaus.gpars:gpars:1.+',
           'org.codehaus.jsr166-mirror:jsr166y:1.7.0',
-          'net.sf.opencsv:opencsv:2.3',
-          'com.xlson.groovycsv:groovycsv:1.0',
-          'dom4j:dom4j:1.6.1',
+          'net.sf.opencsv:opencsv:2.+',
+          'com.xlson.groovycsv:groovycsv:1.+',
+          'dom4j:dom4j:1.6.+',
           //'com.cloudbees.thirdparty:vijava:5.1',
           fileTree(dir: 'libs', include: '*.jar')
 
-  testCompile "junit:junit:4.10"
+  testCompile 'org.spockframework:spock-core:0.7-groovy-2.0', {
+    exclude module: 'groovy-all'
+  }
 }
 
 
@@ -95,18 +101,5 @@ jar {
                'Built-Date': new Date(),
                'Author': authorString,
                'Main-Class': project.group
-  }
-}
-
-
-// src/(main|test)/groovy,resources
-task initProject(description : 'Create empty source directories for all defined sourceSets') {
-  doFirst { println "+Project Initialization" }
-
-  sourceSets*.allSource.srcDirs.flatten().each { File sourceDirectory ->
-    if (!sourceDirectory.exists()) {
-      logger.info "Making folder: $sourceDirectory"  // gradle -i shows this message.
-      sourceDirectory.mkdirs()
-    }
   }
 }
