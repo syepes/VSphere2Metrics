@@ -7,14 +7,13 @@ import ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy
 import static ch.qos.logback.classic.Level.*
 import ch.qos.logback.classic.filter.*
 
-
 import ch.qos.logback.classic.jmx.*
 import ch.qos.logback.classic.LoggerContext
 import java.lang.management.ManagementFactory
 
 
 def baseName = 'vSphere2Graphite'
-def className = 'com.allthingsmonitoring.vSphere2Graphite'
+def className = 'com.allthingsmonitoring.vmware.vSphere2Graphite'
 // Get environment variables
 def HOSTNAME = hostname.split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase() // Get only the hostname of the FQDN
 def USER_HOME = System.getProperty("user.home")
@@ -27,8 +26,7 @@ if (System.properties['app.env']?.toUpperCase() == 'DEBUG'){ statusListener(OnCo
 scan("30 seconds")
 setupAppenders(baseName,HOSTNAME)
 setupLoggers(className)
-jmxConfigurator()
-
+jmxConfigurator(baseName)
 
 
 
@@ -42,11 +40,12 @@ def setupAppenders(baseName,HOSTNAME) {
   }
 
   appender("FILE", RollingFileAppender) {
+    def pid = System.properties['pid'] ?: '#'
     file = "./logs/${baseName}.log"
     //append = true
     //filter(ThresholdFilter) { level = DEBUG }
     encoder(PatternLayoutEncoder) {
-      pattern = "%-35(%d{dd-MM-yyyy - HH:mm:ss.SSS} [${HOSTNAME}] [%thread]) %highlight(%-5level) %logger - %msg%n%rEx"
+      pattern = "%-35(%d{dd-MM-yyyy - HH:mm:ss.SSS} [${HOSTNAME}] ${pid}:[%thread]) %highlight(%-5level) %logger - %msg%n%rEx"
     }
     rollingPolicy(FixedWindowRollingPolicy) {
       fileNamePattern = "./logs/${baseName}.log.%i"
@@ -76,17 +75,6 @@ def setupLoggers(className) {
   }
 }
 
-def jmxConfigurator() {
-  def contextName = context.name
-  def objectNameAsString = MBeanUtil.getObjectNameFor(contextName, JMXConfigurator.class)
-  def objectName = MBeanUtil.string2ObjectName(context, this, objectNameAsString)
-  def platformMBeanServer = ManagementFactory.getPlatformMBeanServer()
-  if (!MBeanUtil.isRegistered(platformMBeanServer, objectName)) {
-    JMXConfigurator jmxConfigurator = new JMXConfigurator((LoggerContext) context, platformMBeanServer, objectName)
-    try {
-      platformMBeanServer.registerMBean(jmxConfigurator, objectName)
-    } catch (all) {
-      addError("Failed to create mbean", all)
-    }
-  }
+def jmxConfigurator(baseName) {
+  jmxConfigurator(baseName)
 }

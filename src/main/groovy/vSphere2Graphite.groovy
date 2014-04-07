@@ -15,7 +15,7 @@
  */
 
 
-package com.allthingsmonitoring
+package com.allthingsmonitoring.vmware
 
 import org.slf4j.*
 import groovy.util.logging.Slf4j
@@ -45,6 +45,7 @@ import java.security.MessageDigest
 import javax.crypto.*
 import javax.crypto.spec.*
 
+import com.allthingsmonitoring.utils.MetricClient
 
 
 @Slf4j
@@ -52,16 +53,16 @@ class vSphere2Graphite {
   TimeDuration lastExecTime = new TimeDuration(0, 0, 0, 0)
   TimeDuration startFromExecTime = new TimeDuration(0, 0, 0, 0)
 
-  /** Configuration file location */
-  final String CFG_FILE  = 'config.groovy'
   ConfigObject cfg
+  MetricClient mc
 
 
   /**
    * Constructor
    */
-  vSphere2Graphite() {
-    cfg = readConfigFile()
+  vSphere2Graphite(String cfgFile='config.groovy') {
+    cfg = readConfigFile(cfgFile)
+    mc = new MetricClient(cfg.graphite.host,cfg.graphite.port,'tcp',cfg?.graphite?.prefix)
     Attributes manifest = getManifestInfo()
     log.info "Initialization: Class: ${this.class.name} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
   }
@@ -70,21 +71,22 @@ class vSphere2Graphite {
   /**
    * Load configuration settings
    *
+   * @param cfgFile String with the path of the config file
    * @return ConfigObject with the configuration elements
    */
-  ConfigObject readConfigFile() {
+  ConfigObject readConfigFile(String cfgFile) {
     try {
-      ConfigObject cfg = new ConfigSlurper().parse(new File(CFG_FILE).toURL())
+      ConfigObject cfg = new ConfigSlurper().parse(new File(cfgFile).toURL())
       if (cfg) {
-        log.trace "The configuration files: ${CFG_FILE} was read correctly"
+        log.trace "The configuration files: ${cfgFile} was read correctly"
         return cfg
       } else {
-        log.error "Verify the content of the configuration file: ${CFG_FILE}"
-        throw new RuntimeException("Verify the content of the configuration file: ${CFG_FILE}")
+        log.error "Verify the content of the configuration file: ${cfgFile}"
+        throw new RuntimeException("Verify the content of the configuration file: ${cfgFile}")
       }
     } catch(FileNotFoundException e) {
-      log.error "The configuration file: ${CFG_FILE} was not found"
-      throw new RuntimeException("The configuration file: ${CFG_FILE} was not found")
+      log.error "The configuration file: ${cfgFile} was not found"
+      throw new RuntimeException("The configuration file: ${cfgFile} was not found")
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
       log.error "Configuration file exception: ${getStackTrace(e)}"
@@ -659,21 +661,17 @@ class vSphere2Graphite {
 
 
   /**
-   * Sends metrics to the Graphite server
+   * Build Metrics to be consumed by Graphite
    *
    * @param data Metrics Data structure
+   * @return ArrayList of Metrics
    */
-  void sendMetrics2Graphite(LinkedHashMap data) {
+  ArrayList buildMetrics(LinkedHashMap data) {
     Date timeStart = new Date()
-    String nodeIdentifier = java.net.InetAddress.getLocalHost().getHostName()
-    int sentCount = 0
-    int progessCount = 0
-    Socket socket
-    log.info "Sending Metrics to Graphite (${cfg.graphite.host}:${cfg.graphite.port})"
+    ArrayList metricList = []
+    log.debug "Bulding Metrics"
 
     try {
-      socket = new Socket(cfg.graphite.host, cfg.graphite.port)
-
       data.each { node ->
         node.each { hash ->
           hash.value['Metrics'].each { metric ->
@@ -682,29 +680,17 @@ class vSphere2Graphite {
 
               String mpath
               if (hash.value['type'] == 'Host') {
-                mpath = "${cfg.graphite.prefix}.${hash.value['Host']}.${hash.value['type']}.${metric.key}"
+                mpath = "${hash.value['Host']}.${hash.value['type']}.${metric.key}"
               } else {
-                mpath = "${cfg.graphite.prefix}.${hash.value['Host']}.${hash.value['type']}.${node.key}.${metric.key}"
+                mpath = "${hash.value['Host']}.${hash.value['type']}.${node.key}.${metric.key}"
               }
 
               BigDecimal mvalue = (ts.value.toString().isEmpty()) ? 0 : ts.value.toBigDecimal()
               int mtimes = ts.key
-              StringBuilder msg = new StringBuilder()
-              msg << "${mpath} ${mvalue} ${mtimes}\n"
 
               // Only send metrics if they are different than 0
               if (mvalue) {
-                if (progessCount >= 10000) {
-                  log.debug "Sending ${hash.value['type']} Metric to Graphite (${cfg?.graphite?.host}:${cfg?.graphite?.port}) using 'TCP' from (${nodeIdentifier}): ${msg.toString().trim()} (${new Date(ts.key.toLong()).format("hh:mm:ss - dd/MM/yyyy")})"
-                  progessCount = 0
-                }
-
-                Writer writer = new OutputStreamWriter(socket.getOutputStream())
-                writer.write(msg.toString())
-                writer.flush()
-
-                progessCount++
-                sentCount++
+                metricList << "${mpath} ${mvalue} ${mtimes}\n"
               }
             }
           }
@@ -712,12 +698,13 @@ class vSphere2Graphite {
       }
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "Socket exception: ${getStackTrace(e)}"
-    } finally {
-      socket?.close()
+      log.error "Building metrics: ${getStackTrace(e)}"
+      return metricList
     }
     Date timeEnd = new Date()
-    log.info "Finished sending ${sentCount} Metrics to Graphite in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Finished Building ${metricList?.size()} Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+
+    return metricList
   }
 
 
@@ -919,7 +906,11 @@ class vSphere2Graphite {
         vSphereDisconnect(si)
 
         // Send metrics
-        sendMetrics2Graphite(metricsData)
+        if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+          mc.send2GraphitePickle(buildMetrics(metricsData))
+        } else {
+          mc.send2Graphite(buildMetrics(metricsData))
+        }
       }
     }
 
