@@ -17,7 +17,7 @@
 # Set this to your Java installation
 JAVA_HOME=/usr/java/latest
 JMX_OPTS='-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9191 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.local.only=false'
-JAVA_OPTS="-server -Xmx800M -Xms350M -XX:MaxPermSize=80m -XX:+CMSClassUnloadingEnabled -XX:+UseG1GC -XX:+AggressiveOpts $JMX_OPTS"
+JAVA_OPTS="-server -Xmx900M -Xms350M -XX:MaxPermSize=80m -XX:+AggressiveOpts -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+CMSClassUnloadingEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:+UseCompressedOops"
 
 serviceName="vSphere2Graphite"                             # service name
 serviceUser="root"                                         # OS user name for the service
@@ -30,7 +30,7 @@ maxShutdownTime=15                                         # maximum number of s
 pidFile="/var/run/$serviceName.pid"                        # name of PID file (PID = process ID number)
 javaCommand="java"                                         # name of the Java launcher without the path
 javaExe="$JAVA_HOME/bin/$javaCommand"                      # file name of the Java application launcher executable
-javaArgs="-Dapp.env=$debugLevel -jar $applDir/vSphere2Graphite.jar"             # arguments for Java launcher
+javaArgs="-Dapp.env=$debugLevel -Dpid=$$ -jar $applDir/vSphere2Graphite.jar"             # arguments for Java launcher
 javaCommandLine="$javaExe $JAVA_OPTS $javaArgs"            # command line to start the Java service application
 javaCommandLineKeyword="${serviceName}.jar"                # a keyword that occurs on the commandline, used to detect an already running service process and to distinguish it from others
 

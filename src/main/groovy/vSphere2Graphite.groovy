@@ -64,7 +64,7 @@ class vSphere2Graphite {
     cfg = readConfigFile(cfgFile)
     mc = new MetricClient(cfg.graphite.host,cfg.graphite.port,'tcp',cfg?.graphite?.prefix)
     Attributes manifest = getManifestInfo()
-    log.info "Initialization: Class: ${this.class.name} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
+    log.info "Initialization: Class: ${this.class.name?.split('\\.')?.getAt(-1)} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
   }
 
 
@@ -238,7 +238,7 @@ class vSphere2Graphite {
 
     try {
       vm = new InventoryNavigator(rootFolder).searchManagedEntity("VirtualMachine", name)
-      if (vm){
+      if (vm) {
         log.info "Found ${name} Virtual Machine"
       } else {
         log.error "Did not find ${name} Virtual Machine"
@@ -265,7 +265,7 @@ class vSphere2Graphite {
 
     try {
       vms = new InventoryNavigator(rootFolder).searchManagedEntities("VirtualMachine")
-      if (vms){
+      if (vms) {
         log.info "Found ${vms.size()} Virtual Machines"
       } else {
         log.warn "Did not find any Virtual Machines"
@@ -510,9 +510,9 @@ class vSphere2Graphite {
         // Can not collect metrics if VM is not Running
         if (vm?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
 
-        vmName = vm?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        vmName = vm?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
         esxHost = new HostSystem(si.getServerConnection(), vm.getRuntime().getHost()).getSummary().getConfig().getName()
-        esxHost = esxHost.split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase() // Get only the hostname of the FQDN
+        esxHost = esxHost?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase() // Get only the hostname of the FQDN
 
         pValues = getPerfMetrics(perfMgr,maxSample,vm)
       } catch (Exception e) {
@@ -549,7 +549,7 @@ class vSphere2Graphite {
         // Can not collect metrics if Host is not Running
         if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
 
-        esxHost = host?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        esxHost = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
 
         pValues = getPerfMetrics(perfMgr,maxSample,host)
       } catch (Exception e) {
@@ -580,7 +580,7 @@ class vSphere2Graphite {
 
     hosts.each { host ->
       try {
-        String hostName = host?.getSummary()?.getConfig()?.getName().split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase()
+        String hostName = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
         // Get datastore info
         HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
         HostFileSystemVolumeInfo vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
@@ -610,11 +610,11 @@ class vSphere2Graphite {
         pathInfo.each { p ->
           diskInfo.each { d ->
             if (p.value['id'] == d.value['uuid']) {
-             if (d.value['type']?.toLowerCase() == 'cdrom') {
-               pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
-             } else {
-               pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
-             }
+              if (d.value['type']?.toLowerCase() == 'cdrom') {
+                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
+              } else {
+                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
+              }
             }
           }
         }
@@ -631,7 +631,8 @@ class vSphere2Graphite {
   }
 
 
-  // Dor debugging
+  // For debugging
+  /*
   void displayValues(pValues, LinkedHashMap perfMetrics) {
     for (pValue in pValues) {
       println "Entity: ${pValue.getEntity().getType()} : ${pValue.getEntity().get_value()}"
@@ -658,6 +659,7 @@ class vSphere2Graphite {
       } else { println "UnExpected sub-type of PerfEntityMetricBase: ${pValue.class}" }
     }
   }
+  */
 
 
   /**
@@ -694,6 +696,15 @@ class vSphere2Graphite {
               }
             }
           }
+          hash.value['Events'].each { ts ->
+            ts.value.each { event ->
+              log.trace "Type:${hash.value['type']} / Host:${hash.value['Host']} / VM:${node.key} / Event:${event.key} / Val:${event.value} / TS:${ts.key}"
+              String mpath = "${hash.value['Host']}.${hash.value['type']}.${event.key}"
+              BigDecimal mvalue = (event?.value?.toString()?.isEmpty()) ? 0 : event?.value?.toBigDecimal()
+
+              metricList << "${mpath} ${mvalue} ${ts.key}\n"
+            }
+          }
         }
       }
     } catch (Exception e) {
@@ -711,55 +722,78 @@ class vSphere2Graphite {
   /////////////////////////////////////
   //  Events
   ////////////////
-  void displayEvent(e) {
-     log.info "Type: ${e.getClass().getName()}"
-     log.info "Key: ${e.getKey()}"
-     log.info "ChainId: ${e.getChainId()}"
-     log.info "User: ${e.getUserName()}"
-     log.info "Time: ${e.getCreatedTime().getTime()}"
-     log.info "FormattedMessage: ${e.getFullFormattedMessage()}"
-     log.info "Datacenter: ${e.getDatacenter()}"
-     log.info "ComputeResource: ${e?.getComputeResource()?.getComputeResource()}"
-     log.info "Host: ${e?.getHost()?.getHost()}"
-     log.info "VM: ${e?.getVm()?.getVm()}"
-   }
 
-  // def em = si.getEventManager()
-  def getEvants(ServiceInstance si,em) {
-    // create a filter spec for querying events
-    def efs = new EventFilterSpec()
+  /**
+   * Finds vSphere events and associates them to the corresponding ESXi
+   *
+   * @param si ServiceInstance
+   * @param maxSample The maximum number of samples to be returned from server
+   * @param metricsData Referenca to the shared variable
+   */
+  void getEvants(ServiceInstance si,int maxSample,LinkedHashMap metricsData) {
+    try {
+      // Create a filter spec for querying events
+      EventFilterSpec efs = new EventFilterSpec()
 
-    // limit to the following events
-    def eventFilterList = ['VmFailedToPowerOnEvent','HostConnectionLostEvent','VmPoweredOffEvent','VmPoweredOnEvent','VmMigratedEvent','InsufficientFailoverResourcesEv ent'] as String[]
-    efs.setType(eventFilterList)
+      // Limit to the following events
+      ArrayList HostEvent = ['HostConnectionLostEvent','HostDisconnectedEvent','HostReconnectionFailedEvent','HostShutdownEvent']
+      ArrayList ClusterEvent = ['DasAgentUnavailableEvent','DasHostFailedEvent','DrsInvocationFailedEvent','InsufficientFailoverResourcesEvent']
+      ArrayList VmEvent = ['VmFailedToPowerOnEvent','VmPoweredOffEvent','VmPoweredOnEvent','VmMigratedEvent','VmFailoverFailed']
 
-    // limit to error and warning only
-    //def severityfilterList = ['error', 'warning'] as String[]
-    //efs.setCategory(severityfilterList)
+      String[] eventFilterList = [HostEvent, ClusterEvent, VmEvent].flatten()
+      efs.setType(eventFilterList)
 
-    // limit to the children of root folder
-    def eFilter = new EventFilterSpecByEntity()
-    eFilter.setEntity(si.getRootFolder().getMOR())
-    eFilter.setRecursion(EventFilterSpecRecursionOption.children)
+      // Limit to the children of root folder
+      EventFilterSpecByEntity eFilter = new EventFilterSpecByEntity()
+      eFilter.setEntity(si.getRootFolder().getMOR())
+      eFilter.setRecursion(EventFilterSpecRecursionOption.children)
 
-    // limit to the events happened since a month ago
-    def tFilter = new EventFilterSpecByTime()
-    Calendar startTime = si.currentTime()
-    //startTime.roll(Calendar.MONTH, false)
-    //startTime.roll(Calendar.HOUR, false)
-    startTime.roll(Calendar.MONDAY, false)
-    tFilter.setBeginTime(startTime)
-    efs.setTime(tFilter)
+      Date vcDate = si?.currentTime()?.time
+      int eventTime
 
-    // limit to the user of "administrator"
-    //def uFilter = new EventFilterSpecByUsername()
-    //uFilter.setSystemUser(false)
-    //def userFilterList = ['administrator'] as String[]
-    //uFilter.setUserList(userFilterList)
+      // When using the parameter 'sf'
+      if (startFromExecTime.toMilliseconds()) {
+        eventTime = (startFromExecTime.toMilliseconds()/1000).toInteger()
+      } else {
+        // Take into account the execution time and get the extra samples.
+        int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+        eventTime = ((maxSample + execDelaySamples) * 20)
+      }
 
-    def events = em.queryEvents(efs)
-    log.info "Received ${events?.size()} events from vSphere"
-    return events
+      // Current VC Date minus the eventTime
+      use(TimeCategory) {
+        vcDate -= eventTime?.second
+      }
+
+      EventFilterSpecByTime tFilter = new EventFilterSpecByTime()
+      tFilter.setBeginTime(vcDate?.toCalendar())
+      efs.setTime(tFilter)
+
+      EventManager em = si.getEventManager()
+      Event[] events = em.queryEvents(efs)
+      log.info "Found ${events?.size() ?: 0} events"
+
+      MapWithDefault hostEvents = [:].withDefault { [:].withDefault { [:].withDefault { 0.toBigDecimal() } } }
+
+      // Sum events generated in the same second
+      events.each { e ->
+        String esxHost = e?.getHost()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        String eventType = e?.getClass()?.getName()?.split('\\.')?.getAt(-1)
+        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()/1000)?.toInteger() ?: 0
+
+        if (esxHost && ts && eventType) {
+          hostEvents[esxHost][ts][eventType]++
+        }
+      }
+      // Map events to metricsData
+      hostEvents.each { String esxHost, MapWithDefault evts ->
+        metricsData[(esxHost)] = [type:'Events', Host:esxHost, Events:evts]
+      }
+
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "getEvants: ${getStackTrace(e)}"
+    }
   }
 
 
@@ -828,7 +862,6 @@ class vSphere2Graphite {
     log.info "Finished Collecting vSphere Counters in ${TimeCategory.minus(timeEnd,timeStart)}"
   }
 
-
   /**
    * Dump metrics
    *
@@ -855,6 +888,7 @@ class vSphere2Graphite {
       LinkedHashMap metricsData = [:]
       getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
       getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
+      getEvants(si,cfg.vcs.perf_max_samples,metricsData)
 
       vSphereDisconnect(si)
 
@@ -902,6 +936,7 @@ class vSphere2Graphite {
         LinkedHashMap metricsData = [:]
         getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
         getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
+        getEvants(si,cfg.vcs.perf_max_samples,metricsData)
 
         vSphereDisconnect(si)
 
@@ -948,10 +983,7 @@ class vSphere2Graphite {
    */
   static main(args) {
     def main = new vSphere2Graphite()
-
-    addShutdownHook {
-      log.info "Shuting down app..."
-    }
+    addShutdownHook { log.info "Shuting down app..." }
 
 
     CliBuilder cli = new CliBuilder(usage: '[-h] [-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
@@ -961,7 +993,7 @@ class vSphere2Graphite {
     cli.sf(longOpt:'startfrom', 'Start from last samples (Real-Time (1..60)min), OPTIONAL', argName:'Mins', required:false, type:int, args:1)
 
     OptionAccessor opt = cli.parse(args)
-    if (!opt) return
+    if (!opt) { return }
 
     // Parse 'Start from' parameter
     if (opt.sf) {

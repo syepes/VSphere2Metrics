@@ -8,7 +8,7 @@ group = 'com.allthingsmonitoring.vmware.vSphere2Graphite' // Class name
 mainClassName = group
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.3'
+version = '1.4'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2014 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
