@@ -12,7 +12,6 @@ import static ch.qos.logback.classic.Level.*
 import org.codehaus.groovy.runtime.StackTraceUtils
 import groovyx.gpars.GParsPool
 import groovyx.gpars.util.PoolUtils
-import groovy.json.*
 
 import com.xlson.groovycsv.CsvParser
 import java.util.regex.Matcher
@@ -749,11 +748,9 @@ class vSphere2Graphite {
    * Build Metrics to be consumed by InfluxDB
    *
    * @param data Metrics Data structure
-   * @param db String Database name
-   * @param retentionPolicy String Database retentionPolicy
    * @return HashMap of Metrics
    */
-  HashMap buildMetricsInfluxDB(LinkedHashMap data, String db, String retentionPolicy = null) {
+  HashMap buildMetricsInfluxDB(LinkedHashMap data) {
     Date timeStart = new Date()
     HashMap metricList = [:]
     log.debug "Bulding InfluxDB Metrics"
@@ -763,10 +760,7 @@ class vSphere2Graphite {
         String server = node?.key
 
         node.each { hash ->
-          HashMap mData = [:]
-          mData['database'] = db
-          if (retentionPolicy) { mData['retentionPolicy'] = retentionPolicy }
-          mData['points'] = []
+          ArrayList mData = []
 
           hash.value['Metrics']?.each { metric ->
             String seriesName
@@ -819,15 +813,11 @@ class vSphere2Graphite {
               log.trace "Server:${server} / SeriesName:${seriesName} / Tags:${mTags} / Points:${metric?.value?.size()}"
 
               // Build final points structure without null elements
-              mData['points'].addAll(
+              mData.addAll(
                 metric?.value?.collect { ts ->
                   if (!seriesName) { return }
-                  ['measurement': seriesName,
-                   'tags': mTags,
-                   'time': ts?.key?.toLong(),
-                   'precision': 's',
-                   'fields': ['value': ts?.value?.toBigDecimal()]
-                  ]
+                  //"${seriesName},${mTags.collect { k,v -> if (v instanceof String) { "$k=\"$v\"" } else {  "$k=$v" }}.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
+                  "${seriesName},${mTags.collect{ it }.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
                 }.findAll()
               )
 
@@ -853,38 +843,6 @@ class vSphere2Graphite {
     log.info "Finished Building InfluxDB Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
 
     return metricList
-  }
-
-  /**
-   * Build Final InfluxDB JSON
-   *
-   * @param data Metrics Data structure
-   * @return String JSON metrics to post
-   */
-  String buildJsonInfluxDB(HashMap mData) {
-    try {
-      StringWriter jsonWriter = new StringWriter()
-      StreamingJsonBuilder jsonBuilder = new StreamingJsonBuilder(jsonWriter)
-      jsonBuilder {
-        database(mData.database)
-        if (mData.retentionPolicy) { retentionPolicy(mData.retentionPolicy) }
-
-        if(mData?.tags) {
-          tags(mData.tags.each { it })
-        }
-
-        points (
-          mData.points.each { it }
-        )
-      }
-
-      return jsonWriter.toString()
-    } catch(Exception e) {
-      StackTraceUtils.deepSanitize(e)
-      log.error "Building InfluxDB JSON: ${e?.message}"
-      log.debug "Building InfluxDB JSON: ${getStackTrace(e)}"
-      return ''
-    }
   }
 
 
@@ -1129,8 +1087,9 @@ class vSphere2Graphite {
             }
 
           } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
-            ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData, cfg?.influxdb.database, cfg?.influxdb.retentionPolicy)?.values()?.collect { buildJsonInfluxDB(it) }
-            mc.send2InfluxDB(metricsDataInflux)
+            ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
+            HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
+            mc.send2InfluxDB(metricsDataInflux, parms)
           }
 
         } catch(Exception e) {

@@ -2,9 +2,9 @@ apply plugin:'groovy'
 apply plugin:'distribution'
 
 def projectName = 'vSphere2Graphite'
-description = "$projectName - ESXi Performance Metric Integration with Graphite"
+description = "$projectName - ESXi Performance Metric Integration with Graphite & InfluxDB"
 
-group = 'com.allthingsmonitoring.vmware.vSphere2Graphite' // Class name
+group = 'com.allthingsmonitoring.vmware.vSphere2Graphite'
 archivesBaseName = projectName
 distsDirName = 'dist'
 version = '1.5'
@@ -46,7 +46,6 @@ repositories {
 
 dependencies {
   compile 'org.codehaus.groovy:groovy:2.+',
-          'org.codehaus.groovy:groovy-json:2.+',
           'commons-cli:commons-cli:1.+',
           'org.slf4j:slf4j-api:1.+',
           'ch.qos.logback:logback-core:1.+',
