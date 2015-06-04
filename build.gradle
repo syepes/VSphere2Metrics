@@ -1,21 +1,23 @@
 apply plugin:'groovy'
-apply plugin:'application'
+apply plugin:'distribution'
 
 def projectName = 'vSphere2Graphite'
 description = "$projectName - ESXi Performance Metric Integration with Graphite"
 
 group = 'com.allthingsmonitoring.vmware.vSphere2Graphite' // Class name
-mainClassName = group
 archivesBaseName = projectName
 distsDirName = 'dist'
 version = '1.4'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
-def copyrightString = 'Copyright &#169; 2014 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
+def copyrightString = 'Copyright &#169; 2015 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
 
 
-defaultTasks 'clean','build'
+defaultTasks 'clean','build','groovydoc','distZip'
 
+configurations {
+  groovyDoc
+}
 
 // http://svn.codehaus.org/griffon/builders/jidebuilder/trunk/build.gradle
 // http://gparallelizer.googlecode.com/svn/trunk/build.gradle
@@ -25,6 +27,8 @@ configure([compileGroovy, compileTestGroovy]) {
   groovyOptions.fork(memoryInitialSize: '128M', memoryMaximumSize: '1G')
   groovyOptions.encoding = 'UTF-8'
   //groovyOptions.optimizationOptions.indy = true
+  sourceCompatibility = 1.7
+  targetCompatibility = 1.7
 }
 
 //configurations.compile.transitive = false
@@ -36,23 +40,29 @@ compileJava {
 
 repositories {
   mavenLocal()
-  maven { url 'http://repository.codehaus.org/' }
+  maven { url 'http://oss.sonatype.org/content/groups/public/' }
   mavenCentral()
 }
 
 dependencies {
-  compile 'org.codehaus.groovy:groovy:2.2.+',
+  compile 'org.codehaus.groovy:groovy:2.+',
           'commons-cli:commons-cli:1.+',
           'org.slf4j:slf4j-api:1.+',
           'ch.qos.logback:logback-core:1.+',
           'ch.qos.logback:logback-classic:1.+',
-          'org.codehaus.gpars:gpars:1.+',
-          'org.codehaus.jsr166-mirror:jsr166y:1.7.0',
           'net.sf.opencsv:opencsv:2.+',
           'com.xlson.groovycsv:groovycsv:1.+',
           'dom4j:dom4j:1.6.+',
-          //'com.cloudbees.thirdparty:vijava:5.1',
+          //'com.cloudbees.thirdparty:vijava:5.+',
           fileTree(dir: 'libs', include: '*.jar')
+
+  compile 'org.codehaus.jsr166-mirror:jsr166y:1.7.+'
+  compile 'org.codehaus.gpars:gpars:1.+', {
+            exclude module: "groovy-all"
+          }
+
+  groovyDoc 'org.codehaus.groovy:groovy-groovydoc:2.+',
+            'org.codehaus.groovy:groovy-ant:2.+'
 
   testCompile 'org.spockframework:spock-core:0.7-groovy-2.0', {
     exclude module: 'groovy-all'
@@ -61,28 +71,21 @@ dependencies {
 
 
 groovydoc {
-  dependsOn classes
-  groovyClasspath = configurations.compile // http://issues.gradle.org/browse/GRADLE-1391
-  destinationDir  = new File(( System.getProperty( 'groovydocDir' ) ?: project.buildDir.path + '/groovydoc' ), ( project.version.contains( '-SNAPSHOT' ) ? '' : project.version ))
-  use = true
+  groovyClasspath = configurations.groovyDoc
+  destinationDir  = new File(( System.getProperty( 'groovydocDir' ) ?: project.buildDir.path + '/docs' ), ( project.version.contains( '-SNAPSHOT' ) ? '' : project.version ))
   includePrivate = true
 
   windowTitle = "$projectName"
-  docTitle = "$projectName"
-  header = "$projectName - v$project.version"
+  docTitle = "$projectName - v$project.version"
+  header = ""
   footer = copyrightString
+  overview ""
 
   link 'http://static.springsource.org/spring/docs/3.1.x/javadoc-api/', 'org.springframework.'
   link 'http://download.oracle.com/javase/6/docs/api/',                 'java.'
-  link 'http://groovy.codehaus.org/api/',                               'groovy.', 'org.codehaus.groovy.'
+  link 'http://www.groovy-lang.org/api/',                               'groovy.', 'org.codehaus.groovy.'
   link 'http://commons.apache.org/net/apidocs/',                        'org.apache.commons.net.'
   link 'http://truezip.java.net/apidocs/',                              'de.schlichtherle.'
-}
-
-
-processResources{
-  exclude 'config.groovy'
-  exclude '*.sh'
 }
 
 jar {
@@ -101,5 +104,15 @@ jar {
                'Built-Date': new Date(),
                'Author': authorString,
                'Main-Class': project.group
+  }
+}
+
+distributions {
+  main {
+    baseName = archivesBaseName
+    contents {
+      from { 'build/libs' }
+      from { 'src/dist' }
+    }
   }
 }

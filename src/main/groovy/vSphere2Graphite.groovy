@@ -1,19 +1,7 @@
 /**
- * <PRE>
- *  <B>Description</B>
- *   Connects to vSphere and collect performance metrics from all the known Hosts and Guests
- *
- *  <B>Other stuff</B>
- *   Author:      Sebastian YEPES F. (mailto:syepes@gmail.com)
- *   Copyright:   Copyright (c) 2012 Sebastian YEPES F.
- *   License:     BSD
- *
- *  <B>Warranty</B>
- *   This software is provided "as is" and without any express or implied warranties, including, without limitation, i am not held responsible for any _damage_ or _loss_ _of_ _data_ produced by this software
  *
  * @author Sebastian YEPES FERNANDEZ (syepes@gmail.com)
  */
-
 
 package com.allthingsmonitoring.vmware
 
@@ -30,6 +18,11 @@ import java.util.regex.Matcher
 import java.util.zip.*
 import java.util.jar.Manifest
 import java.util.jar.Attributes
+
+import groovy.transform.TimedInterrupt
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 import groovy.time.*
 import java.text.SimpleDateFormat
@@ -89,8 +82,9 @@ class vSphere2Graphite {
       throw new RuntimeException("The configuration file: ${cfgFile} was not found")
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "Configuration file exception: ${getStackTrace(e)}"
-      throw new RuntimeException("Configuration file exception:\n${getStackTrace(e)}")
+      log.error "Configuration file exception: ${e?.message}"
+      log.debug "Configuration file exception: ${getStackTrace(e)}"
+      throw new RuntimeException("Configuration file exception: ${e?.message}")
     }
   }
 
@@ -112,14 +106,15 @@ class vSphere2Graphite {
       manifest = new Manifest(new URL(manifestPath).openStream())
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.warn "Manifest: ${getStackTrace(e)}"
+      log.warn "Manifest: ${e?.message}"
+      log.debug "Manifest: ${getStackTrace(e)}"
     }
 
     return manifest.getMainAttributes()
   }
 
   // Gets the StackTrace and returns a string
-  String getStackTrace(Throwable t) {
+  static String getStackTrace(Throwable t) {
     StringWriter sw = new StringWriter()
     PrintWriter pw = new PrintWriter(sw, true)
     t.printStackTrace(pw)
@@ -135,15 +130,22 @@ class vSphere2Graphite {
    * @param plaintext String that should be encrypted
    * @return Encrypted String
    */
-  /*
   private String encrypt(String plaintext) {
-    String salt = java.net.InetAddress.getLocalHost().getHostName()
-    String key = 'iFdZMpygE-0'
-    Cipher c = Cipher.getInstance('AES')
-    byte[] keyBytes = MessageDigest.getInstance('SHA-1').digest("${salt}${key}".getBytes())[0..<16]
-    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, 'AES'))
-    return c.doFinal(plaintext.bytes).encodeBase64() as String
-  }*/
+    try {
+      String salt = java.net.InetAddress.getLocalHost().getHostName()
+      String key = 'iFdZMpygE-0'
+      Cipher c = Cipher.getInstance('AES')
+      byte[] keyBytes = MessageDigest.getInstance('SHA-1').digest("${salt}${key}".getBytes())[0..<16]
+      c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, 'AES'))
+      return c.doFinal(plaintext.bytes).encodeBase64() as String
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      return ''
+    }
+  }
+  void encryptPassword(String plaintext) {
+      println "${encrypt(plaintext)}"
+  }
 
   /**
    * Decrypt string
@@ -152,12 +154,17 @@ class vSphere2Graphite {
    * @return Decrypted String
    */
   private String decrypt(String ciphertext) {
-    String salt = java.net.InetAddress.getLocalHost().getHostName()
-    String key = 'iFdZMpygE-0'
-    Cipher c = Cipher.getInstance('AES')
-    byte[] keyBytes = MessageDigest.getInstance('SHA-1').digest("${salt}${key}".getBytes())[0..<16]
-    c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, 'AES'))
-    return new String(c.doFinal(ciphertext.decodeBase64()))
+    try {
+      String salt = java.net.InetAddress.getLocalHost().getHostName()
+      String key = 'iFdZMpygE-0'
+      Cipher c = Cipher.getInstance('AES')
+      byte[] keyBytes = MessageDigest.getInstance('SHA-1').digest("${salt}${key}".getBytes())[0..<16]
+      c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, 'AES'))
+      return new String(c.doFinal(ciphertext.decodeBase64()))
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      return ''
+    }
   }
 
 
@@ -179,10 +186,12 @@ class vSphere2Graphite {
       log.error "Invalid login vSphere: ${cfg.vcs.user}"
     } catch (RemoteException e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "Remote exception: ${getStackTrace(e)}"
+      log.error "Remote exception: ${e?.message}"
+      log.debug "Remote exception: ${getStackTrace(e)}"
     } catch (MalformedURLException e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "MalformedURLexception: ${getStackTrace(e)}"
+      log.error "MalformedURLexception: ${e?.message}"
+      log.debug "MalformedURLexception: ${getStackTrace(e)}"
     }
 
     return si
@@ -200,10 +209,11 @@ class vSphere2Graphite {
       si.getServerConnection().logout()
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "vSphereDisconnect: ${getStackTrace(e)}"
+      log.error "vSphereDisconnect: ${e?.message}"
+      log.debug "vSphereDisconnect: ${getStackTrace(e)}"
     }
     Date timeEnd = new Date()
-    log.info "Disconected to vSphere in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Disconected from vSphere in ${TimeCategory.minus(timeEnd,timeStart)}"
   }
 
   /**
@@ -219,7 +229,8 @@ class vSphere2Graphite {
       perfMgr = si?.getPerformanceManager()
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "getPerformanceManager: ${getStackTrace(e)}"
+      log.error "getPerformanceManager: ${e?.message}"
+      log.debug "getPerformanceManager: ${getStackTrace(e)}"
     }
     return perfMgr
   }
@@ -246,7 +257,8 @@ class vSphere2Graphite {
 
     } catch (RemoteException e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "getVM: ${getStackTrace(e)}"
+      log.error "getVM: ${e?.message}"
+      log.debug "getVM: ${getStackTrace(e)}"
     }
 
     return vm
@@ -273,7 +285,8 @@ class vSphere2Graphite {
 
     } catch (RemoteException e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "getVMs: ${getStackTrace(e)}"
+      log.error "getVMs: ${e?.message}"
+      log.debug "getVMs: ${getStackTrace(e)}"
     }
 
     return vms
@@ -300,7 +313,8 @@ class vSphere2Graphite {
 
     } catch (RemoteException e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "getHosts: ${getStackTrace(e)}"
+      log.error "getHosts: ${e?.message}"
+      log.debug "getHosts: ${getStackTrace(e)}"
     }
 
     return hosts
@@ -376,23 +390,34 @@ class vSphere2Graphite {
    * @param vm The ManagedObject managed object whose performance statistics are being queried
    * @return PerfEntityMetricBase The metric values for the specified entity or entities.
    */
+  //@TimedInterrupt(value=300L, unit=TimeUnit.SECONDS, applyToAllClasses=false, applyToAllMembers=false, checkOnMethodStart=false)
   PerfEntityMetricBase[] getPerfMetrics(PerformanceManager perfMgr,int maxSample,ManagedEntity vm) {
+    GParsPool.withPool {
+      Date timeStart = new Date()
+      String vmName = vm?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+      Long queryTimeout = cfg?.vcs?.perfquery_timeout?.toLong() ?: 60
 
-    PerfProviderSummary pps = perfMgr.queryPerfProviderSummary(vm)
-    int refreshRate = pps.getRefreshRate().intValue()
-    log.trace "Collecting Performance Metrics RefreshRate: ${refreshRate}"
+      PerfProviderSummary pps = perfMgr.queryPerfProviderSummary(vm)
+      int refreshRate = pps.getRefreshRate().intValue()
+      log.trace "Collecting Performance Metrics RefreshRate: ${refreshRate}"
 
-    PerfMetricId[] pmis = perfMgr.queryAvailablePerfMetric(vm, null, null, refreshRate)
-    // For the instance property, specify an asterisk (*) to retrieve instance and aggregate data or a zero-length string ("") to retrieve aggregate data only
-    pmis.each { it.setInstance("*") }
+      PerfMetricId[] pmis = perfMgr.queryAvailablePerfMetric(vm, null, null, refreshRate)
+      // For the instance property, specify an asterisk (*) to retrieve instance and aggregate data or a zero-length string ("") to retrieve aggregate data only
+      pmis.each { it.setInstance("*") }
 
-    PerfQuerySpec qSpec = createPerfQuerySpec(vm, pmis, maxSample, refreshRate)
+      PerfQuerySpec qSpec = createPerfQuerySpec(vm, pmis, maxSample, refreshRate)
 
-    // Use QueryPerf to obtain metrics for multiple entities in a single call.
-    // Use QueryPerfComposite to obtain statistics for a single entity with its descendent objects statistics for a host and all its virtual machines, for example.
-    PerfEntityMetricBase[] pValues = perfMgr.queryPerf(qSpec)
+      // Use QueryPerf to obtain metrics for multiple entities in a single call.
+      // Use QueryPerfComposite to obtain statistics for a single entity with its descendent objects statistics for a host and all its virtual machines, for example.
+      //PerfEntityMetricBase[] pValues = perfMgr.queryPerf(qSpec)
+      Future result = { perfMgr.queryPerf(qSpec) }.async().call()
+      PerfEntityMetricBase[] pValues = result.get(queryTimeout, TimeUnit.SECONDS)
 
-    return pValues
+      Date timeEnd = new Date()
+      log.debug "Collected queryPerf metrics for ${vmName} in ${TimeCategory.minus(timeEnd,timeStart)}"
+
+      return pValues
+    }
   }
 
   /**
@@ -502,7 +527,7 @@ class vSphere2Graphite {
    */
   void getGuestMetrics(ServiceInstance si,PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
 
-    vms.each { vm ->
+    vms.each { ManagedEntity vm ->
       PerfEntityMetricBase[] pValues
       String vmName,esxHost
 
@@ -515,15 +540,20 @@ class vSphere2Graphite {
         esxHost = esxHost?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase() // Get only the hostname of the FQDN
 
         pValues = getPerfMetrics(perfMgr,maxSample,vm)
+      } catch (TimeoutException e) {
+        StackTraceUtils.deepSanitize(e)
+        log.error "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
+
       } catch (Exception e) {
         StackTraceUtils.deepSanitize(e)
-        log.error "getGuestMetrics: ${getStackTrace(e)}"
+        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) ${e?.message}"
+        log.debug "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) ${getStackTrace(e)}"
       }
 
       if (vmName && esxHost && pValues) {
         metricsData[(vmName)] = [type:'Guest', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
       } else {
-        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost})"
+        log.debug "Ignoring metrics from the VM: ${vmName} (${esxHost})"
       }
     }
   }
@@ -541,7 +571,7 @@ class vSphere2Graphite {
    */
   void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
 
-    hosts.each { host ->
+    hosts.each { ManagedEntity host ->
       PerfEntityMetricBase[] pValues
       String esxHost
 
@@ -552,16 +582,21 @@ class vSphere2Graphite {
         esxHost = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
 
         pValues = getPerfMetrics(perfMgr,maxSample,host)
+      } catch (TimeoutException e) {
+        StackTraceUtils.deepSanitize(e)
+        log.warn "Could not retrieve metrics for the Host: ${esxHost} Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
+
       } catch (Exception e) {
         StackTraceUtils.deepSanitize(e)
-        log.error "getHostsMetrics: ${getStackTrace(e)}"
+        log.warn "Could not retrieve metrics for the Host: ${esxHost} ${e?.message}"
+        log.debug "Could not retrieve metrics for the Host: ${esxHost} ${getStackTrace(e)}"
       }
 
 
       if (esxHost && pValues) {
         metricsData[(esxHost)] = [type:'Host', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
       } else {
-        log.warn "Could not retrieve metrics for the Host: ${esxHost}"
+        log.debug "Ignoring metrics for the Host: ${esxHost}"
       }
     }
   }
@@ -578,13 +613,23 @@ class vSphere2Graphite {
     LinkedHashMap diskInfo = [:]
     LinkedHashMap pathInfo = [:]
 
-    hosts.each { host ->
+    hosts.each { ManagedEntity host ->
       try {
         String hostName = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
         // Get datastore info
-        HostStorageSystem hds = host.getHostStorageSystem() // HostStorageSystem
-        HostFileSystemVolumeInfo vi = hds.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
-        HostFileSystemMountInfo[] mis = vi.getMountInfo() // HostFileSystemMountInfo
+
+        HostRuntimeInfo hrti = host?.getRuntime()
+        HostSystemConnectionState hscs = hrti?.getConnectionState()
+        if (hscs == HostSystemConnectionState.connected) {
+          log.debug "getHostInfo: The Host ${hostName} is available (${hscs?.name()})"
+        } else {
+          log.warn "getHostInfo: The Host ${hostName} is not available (${hscs?.name()})"
+          return
+        }
+
+        HostStorageSystem hds = host?.getHostStorageSystem() // HostStorageSystem
+        HostFileSystemVolumeInfo vi = hds?.getFileSystemVolumeInfo() // HostFileSystemVolumeInfo
+        HostFileSystemMountInfo[] mis = vi?.getMountInfo() // HostFileSystemMountInfo
         mis.each {
           HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
           if (hfsv.metaClass.respondsTo(hfsv, 'getUuid')) {
@@ -593,12 +638,12 @@ class vSphere2Graphite {
         }
 
         // Get disk info
-        HostStorageDeviceInfo hsdi = hds.getStorageDeviceInfo() // HostStorageDeviceInfo
-        ScsiLun[] sls = hsdi.getScsiLun()
+        HostStorageDeviceInfo hsdi = hds?.getStorageDeviceInfo() // HostStorageDeviceInfo
+        ScsiLun[] sls = hsdi?.getScsiLun()
         sls.each { diskInfo[it.getCanonicalName()] = [type:it.getLunType().trim(), vendor:it.getVendor().trim(), uuid:it.getUuid(), host:hostName] }
 
         // Get Multipath info
-        HostMultipathInfo hmi = hsdi.getMultipathInfo() // HostMultipathInfo
+        HostMultipathInfo hmi = hsdi?.getMultipathInfo() // HostMultipathInfo
         hmi.getLun().each { // HostMultipathInfoLogicalUnit
           HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
           hmips.each { p ->
@@ -620,7 +665,8 @@ class vSphere2Graphite {
         }
       } catch(Exception e) {
         StackTraceUtils.deepSanitize(e)
-        log.error "getHostInfo: ${getStackTrace(e)}"
+        log.error "getHostInfo: ${e?.message}"
+        log.debug "getHostInfo: ${getStackTrace(e)}"
       }
     }
 
@@ -630,36 +676,6 @@ class vSphere2Graphite {
     return hostInfo
   }
 
-
-  // For debugging
-  /*
-  void displayValues(pValues, LinkedHashMap perfMetrics) {
-    for (pValue in pValues) {
-      println "Entity: ${pValue.getEntity().getType()} : ${pValue.getEntity().get_value()}"
-      println "Entity: ${pValue.getEntity().class.methods.name.sort()}"
-
-      if (pValue instanceof PerfEntityMetric) {
-        println "+PerfEntityMetric"
-
-      } else if (pValue instanceof PerfEntityMetricCSV) {
-        println "+PerfEntityMetricCSV"
-        println "pValues Interval: ${pValue.getSampleInfoCSV()}"
-
-        // Get the odd (refreshRate) and even (Time Stamp) elements out of a list
-        //ts.tokenize(',').eachWithIndex { item, idx -> println "${idx} : ${item} : ${( idx % 2 ? 'odd' : 'even')}" }
-        def (rRate,tStamp) = pValue.getSampleInfoCSV().tokenize(',').collate( 2 ).transpose()
-        tStamp.each {
-          println new Date().parse("yyyy-MM-dd'T'HH:mm:ss'Z'", it)
-        }
-
-        pValue.getValue().each {
-          println "\tPerfCounterId / Name: ${it.getId().getCounterId()} / ${perfMetrics[it.getId().getCounterId()]}"
-          println "\tCSV sample values:" + it.getValue()
-        }
-      } else { println "UnExpected sub-type of PerfEntityMetricBase: ${pValue.class}" }
-    }
-  }
-  */
 
 
   /**
@@ -709,7 +725,8 @@ class vSphere2Graphite {
       }
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "Building metrics: ${getStackTrace(e)}"
+      log.error "Building metrics: ${e?.message}"
+      log.debug "Building metrics: ${getStackTrace(e)}"
       return metricList
     }
     Date timeEnd = new Date()
@@ -792,7 +809,8 @@ class vSphere2Graphite {
 
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "getEvants: ${getStackTrace(e)}"
+      log.error "getEvants: ${e?.message}"
+      log.debug "getEvants: ${getStackTrace(e)}"
     }
   }
 
@@ -897,7 +915,14 @@ class vSphere2Graphite {
       metricsData.each { n ->
         println "${n.key}:"
         n.value.each {
-          println "\t${it.key}: ${it.value}"
+          if (it.key == 'Metrics') {
+            println "\t${it.key}:"
+            it.value.each {
+              println "\t\t${it.key}: ${it.value}"
+            }
+          } else {
+            println "\t${it.key}: ${it.value}"
+          }
         }
       }
     }
@@ -921,30 +946,41 @@ class vSphere2Graphite {
       log.info "Start Collecting vSphere Metrics in parallel using PoolSize: ${cfg?.vcs?.urls.size()}/${PoolUtils.retrieveDefaultPoolSize()} (Current/Max) / Last execution time: ${lastExecTime}"
 
       vcs.eachParallel { vc ->
+        String vcHost = vc?.replaceAll(~/http.?:\/\/(.*)\/.*/, '$1')?.split('\\.')?.getAt(0)?.toLowerCase()
+        Thread.currentThread().name = vcHost
+
         ServiceInstance si = vSphereConnect(vc)
         if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
 
-        // Find and create p}rformance metrics (counters) hash table
-        PerformanceManager perfMgr = getPerformanceManager(si)
-        LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
+        try {
+          // Find and create p}rformance metrics (counters) hash table
+          PerformanceManager perfMgr = getPerformanceManager(si)
+          LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
 
-        ManagedEntity[] hosts = getHosts(si) // Get Hosts
-        LinkedHashMap hi = getHostInfo(hosts) // Get Host info
-        ManagedEntity[] guests = getVMs(si) // Get VMs
+          ManagedEntity[] hosts = getHosts(si) // Get Hosts
+          LinkedHashMap hi = getHostInfo(hosts) // Get Host info
+          ManagedEntity[] guests = getVMs(si) // Get VMs
 
-        // Collect Host and Guest performance metrics
-        LinkedHashMap metricsData = [:]
-        getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
-        getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
-        getEvants(si,cfg.vcs.perf_max_samples,metricsData)
+          // Collect Host and Guest performance metrics
+          LinkedHashMap metricsData = [:]
+          getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
+          getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
+          getEvants(si,cfg.vcs.perf_max_samples,metricsData)
 
-        vSphereDisconnect(si)
 
-        // Send metrics
-        if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
-          mc.send2GraphitePickle(buildMetrics(metricsData))
-        } else {
-          mc.send2Graphite(buildMetrics(metricsData))
+          // Send metrics
+          if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+            mc.send2GraphitePickle(buildMetrics(metricsData))
+          } else {
+            mc.send2Graphite(buildMetrics(metricsData))
+          }
+
+        } catch(Exception e) {
+          StackTraceUtils.deepSanitize(e)
+          log.error "GParsPool exception: ${e?.message}"
+          log.debug "GParsPool exception: ${getStackTrace(e)}"
+        } finally {
+          vSphereDisconnect(si)
         }
       }
     }
@@ -971,8 +1007,9 @@ class vSphere2Graphite {
       }
     } catch (Exception e) {
       StackTraceUtils.deepSanitize(e)
-      log.error "runAsDaemon exception: ${getStackTrace(e)}"
-      throw new RuntimeException("runAsDaemon exception: ${getStackTrace(e)}")
+      log.error "runAsDaemon exception: ${e?.message}"
+      log.debug "runAsDaemon exception: ${getStackTrace(e)}"
+      throw new RuntimeException("runAsDaemon exception: ${e?.message}")
     }
   }
 
@@ -982,38 +1019,45 @@ class vSphere2Graphite {
    *
    */
   static main(args) {
-    def main = new vSphere2Graphite()
     addShutdownHook { log.info "Shuting down app..." }
 
-
-    CliBuilder cli = new CliBuilder(usage: '[-h] [-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
+    CliBuilder cli = new CliBuilder(usage: '[-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
     cli.h(longOpt:'help', 'Usage information')
     cli.dc(longOpt:'dumpcounters', 'Dump available counters, OPTIONAL', required:false)
     cli.dm(longOpt:'dumpmetrics', 'Dump Metrics, OPTIONAL', required:false)
+    cli.pwd('Encrypt config password', argName:'Password', required:false, type:String, args:1)
     cli.sf(longOpt:'startfrom', 'Start from last samples (Real-Time (1..60)min), OPTIONAL', argName:'Mins', required:false, type:int, args:1)
 
     OptionAccessor opt = cli.parse(args)
-    if (!opt) { return }
+    if (!opt) { return } else if (opt.h | opt.arguments().size() != 0) { cli.usage(); return }
 
-    // Parse 'Start from' parameter
-    if (opt.sf) {
-      // Maximum allowed samples is 180 (real-time)
-      if ((1..60).contains(opt.sf.toInteger())) {
-        main.startFromExecTime = new TimeDuration(0, opt.sf.toInteger(), 0, 0)
-      } else {
-        println "The start from parameter '${opt.sf}' is Out of range (1..60)"
-        return
+    try {
+      def main = new vSphere2Graphite()
+
+      // Parse 'Start from' parameter
+      if (opt.sf) {
+        // Maximum allowed samples is 180 (real-time)
+        if ((1..60).contains(opt.sf.toInteger())) {
+          main.startFromExecTime = new TimeDuration(0, opt.sf.toInteger(), 0, 0)
+        } else {
+          println "The start from parameter '${opt.sf}' is Out of range (1..60)"
+          return
+        }
       }
-    }
 
-    if (opt.dc) {
-      main.dumpCounters()
-    } else if (opt.dm) {
-      main.dumpMetrics()
-    } else if (opt.h | opt.arguments().size() != 0) {
-      cli.usage()
-    } else {
-      main.runAsDaemon()
+      if (opt.dc) {
+        main.dumpCounters()
+      } else if (opt.dm) {
+        main.dumpMetrics()
+      } else if (opt.pwd) {
+        main.encryptPassword(opt.pwd)
+      } else {
+        main.runAsDaemon()
+      }
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "Main exception: ${e?.message}"
+      log.debug "Main exception: ${getStackTrace(e)}"
     }
   }
 }
