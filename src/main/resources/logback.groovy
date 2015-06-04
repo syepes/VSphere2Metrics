@@ -12,38 +12,54 @@ import ch.qos.logback.classic.LoggerContext
 import java.lang.management.ManagementFactory
 
 
-def baseName = 'vSphere2Graphite'
-def className = 'com.allthingsmonitoring.vmware.vSphere2Graphite'
-// Get environment variables
-def HOSTNAME = hostname.split('\\.')[0].replaceAll(~/[\s-\.]/, "-").toLowerCase() // Get only the hostname of the FQDN
-def USER_HOME = System.getProperty("user.home")
-//def USER = System.getenv("USER")
-def bySecond = timestamp("yyyyMMdd'T'HHmmss")
-
-
+String baseName = 'vSphere2Graphite'
+ArrayList classNames = ['com.allthingsmonitoring.vmware.vSphere2Graphite','com.allthingsmonitoring.utils.MetricClient']
+Map defaultLevels = setLoggerLevels()
 
 if (System.properties['app.env']?.toUpperCase() == 'DEBUG'){ statusListener(OnConsoleStatusListener) }
 scan("30 seconds")
-setupAppenders(baseName,HOSTNAME)
-setupLoggers(className)
+setupAppenders(baseName,defaultLevels)
+setupLoggers(classNames)
 jmxConfigurator(baseName)
 
 
+Map setLoggerLevels() {
+  Map defaultLevels = [:]
+  String env = System.properties['app.env']?.toUpperCase() ?: 'PROD'
 
-def setupAppenders(baseName,HOSTNAME) {
+  if(env == 'PROD'){ // Only file (info)
+    defaultLevels['CONSOLE'] = ERROR
+    defaultLevels['FILE'] = INFO
+  }else if(env == 'DEV'){ // File (debug) and console (info)
+    defaultLevels['CONSOLE'] = INFO
+    defaultLevels['FILE'] = DEBUG
+  }else if(env == 'DEBUG'){
+    defaultLevels['CONSOLE'] = INFO
+    defaultLevels['FILE'] = TRACE
+  }else{
+    defaultLevels['CONSOLE'] = OFF
+    defaultLevels['FILE'] = OFF
+  }
+
+  return defaultLevels
+}
+
+
+void setupAppenders(String baseName, Map defaultLevels) {
+  String HOSTNAME = hostname?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase() // Get only the hostname of the FQDN
+
   appender("CONSOLE", ConsoleAppender) {
     // Deny all events with a level below INFO, that is TRACE and DEBUG
-    filter(ThresholdFilter) { level = INFO }
+    filter(ThresholdFilter) { level = defaultLevels['CONSOLE'] }
     encoder(PatternLayoutEncoder) {
       pattern = "%-35(%d{HH:mm:ss} [%thread]) %highlight(%-5level) %logger - %msg%n%rEx"
     }
   }
 
   appender("FILE", RollingFileAppender) {
-    def pid = System.properties['pid'] ?: '#'
+    String pid = System.properties['pid'] ?: '#'
     file = "./logs/${baseName}.log"
-    //append = true
-    //filter(ThresholdFilter) { level = DEBUG }
+    filter(ThresholdFilter) { level = defaultLevels['FILE'] }
     encoder(PatternLayoutEncoder) {
       pattern = "%-35(%d{dd-MM-yyyy - HH:mm:ss.SSS} [${HOSTNAME}] ${pid}:[%thread]) %highlight(%-5level) %logger - %msg%n%rEx"
     }
@@ -53,28 +69,18 @@ def setupAppenders(baseName,HOSTNAME) {
       maxIndex = 5
     }
     triggeringPolicy(SizeBasedTriggeringPolicy) {
-      maxFileSize = "10MB"
+      maxFileSize = "50MB"
     }
   }
 }
 
-
-def setupLoggers(className) {
-  def env = System.properties['app.env']?.toUpperCase() ?: 'PROD'
-
-  if(env == 'PROD'){ // Only file (info)
-    root INFO, ['FILE']
-  }else if(env == 'DEV'){ // File (debug) and console (info)
-    logger className, DEBUG, ['FILE']
-    root INFO, ['CONSOLE']
-  }else if(env == 'DEBUG'){
-    logger className, TRACE, ['FILE']
-    root INFO, ['CONSOLE']
-  }else{
-    root OFF, ['CONSOLE', 'FILE']
+void setupLoggers(ArrayList classNames) {
+  classNames.each { String cn ->
+    logger cn, TRACE, ['CONSOLE', 'FILE']
   }
 }
 
-def jmxConfigurator(baseName) {
+void jmxConfigurator(String baseName) {
   jmxConfigurator(baseName)
 }
+
