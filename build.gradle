@@ -116,3 +116,8 @@ distributions {
     }
   }
 }
+
+distZip.dependsOn('jar')
+distTar.dependsOn('jar')
+distTar.compression = Compression.GZIP
+
