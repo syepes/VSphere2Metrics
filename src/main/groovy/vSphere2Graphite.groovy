@@ -28,6 +28,7 @@ import groovy.time.*
 import java.text.SimpleDateFormat
 
 import java.net.URL
+import java.net.HttpURLConnection
 import com.vmware.vim25.*
 import com.vmware.vim25.mo.*
 
@@ -55,9 +56,16 @@ class vSphere2Graphite {
    */
   vSphere2Graphite(String cfgFile='config.groovy') {
     cfg = readConfigFile(cfgFile)
-    mc = new MetricClient(cfg.graphite.host,cfg.graphite.port,'tcp',cfg?.graphite?.prefix)
     Attributes manifest = getManifestInfo()
     log.info "Initialization: Class: ${this.class.name?.split('\\.')?.getAt(-1)} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
+
+    if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
+      mc = new MetricClient(cfg.graphite.host, cfg.graphite.port, 'tcp', cfg?.graphite?.prefix)
+    } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
+      mc = new MetricClient(cfg.influxdb.host, cfg.influxdb.port, cfg.influxdb.protocol, null, cfg.influxdb.auth)
+    } else {
+      throw new Exception("Unknown configured destination: ${cfg?.destination?.type}")
+    }
   }
 
 
@@ -409,7 +417,7 @@ class vSphere2Graphite {
 
       // Use QueryPerf to obtain metrics for multiple entities in a single call.
       // Use QueryPerfComposite to obtain statistics for a single entity with its descendent objects statistics for a host and all its virtual machines, for example.
-      //PerfEntityMetricBase[] pValues = perfMgr.queryPerf(qSpec)
+      // Generate an TimeoutException if the queryTimeout is exceeded
       Future result = { perfMgr.queryPerf(qSpec) }.async().call()
       PerfEntityMetricBase[] pValues = result.get(queryTimeout, TimeUnit.SECONDS)
 
@@ -443,7 +451,7 @@ class vSphere2Graphite {
         def (rRate,tStamp) = pValue.getSampleInfoCSV().tokenize(',').collate( 2 ).transpose()
 
         // Convert incoming time to the Graphite TZ and to the epoch format
-        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs.timezone,cfg.graphite.timezone)).time.toString().toLong()/1000).toInteger() }
+        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs?.timezone,cfg?.destination?.timezone)).time.toString().toLong()/1000).toInteger() }
 
         // Create data structure metricData[Metric][[Timestamp:Value]] for all the instances
         // [net.usage_average-kiloBytesPerSecond:[1339152760000:0, 1339152780000:1, 1339152800000:0, 1339152820000:0, 1339152840000:0, 1339152860000:0]
@@ -736,6 +744,108 @@ class vSphere2Graphite {
   }
 
 
+  /**
+   * Build Metrics to be consumed by InfluxDB
+   *
+   * @param data Metrics Data structure
+   * @return HashMap of Metrics
+   */
+  HashMap buildMetricsInfluxDB(LinkedHashMap data) {
+    Date timeStart = new Date()
+    HashMap metricList = [:]
+    log.debug "Bulding InfluxDB Metrics"
+
+    try {
+      data.each { node ->
+        String server = node?.key
+
+        node.each { hash ->
+          ArrayList mData = []
+
+          hash.value['Metrics']?.each { metric ->
+            String seriesName
+            HashMap mTags = [:]
+
+            try {
+              String type = hash?.value['type'] ?: ''
+              String host = hash?.value['Host'] ?: ''
+
+              mTags << ['type': type.toString(), 'server': server.toString() ]
+
+              if (host && host != server) {
+                mTags << ['host': host.toString()]
+              }
+
+              switch ( metric.key ) {
+                case ~/^(cpu|net|mem|rescpu|virtualDisk|power|hbr|vflashModule)\..*/:
+                  Matcher m = Matcher.lastMatcher
+                  String mType = m?.group(1)
+                  seriesName = "${mType}_${metric.key?.split('\\.')?.getAt(-1)}"
+                  String mInstance = metric?.key?.split('\\.')?.getAt(1 .. -2)?.getAt(0) ?: ''
+
+                  if ( mInstance ) {
+                    mTags << ['instance': mInstance.toString()]
+                  }
+
+                break
+                case ~/^(datastore|disk|storageAdapter|storagePath)\..*/:
+                  Matcher m = Matcher.lastMatcher
+                  String mType = m?.group(1)
+                  seriesName = "${mType}_${metric.key?.split('\\.')?.getAt(-1)}"
+                  String mInstanceType = metric?.key?.split('\\.')?.getAt(1 .. -2).getAt(0) ?: ''
+                  String mInstance = metric?.key?.split('\\.')?.getAt(2 .. -2).getAt(0) ?: ''
+
+                  if ( mInstanceType ) {
+                    mTags << ['instance_type': mInstanceType.toString()]
+                  }
+                  if ( mInstance ) {
+                    mTags << ['instance': mInstance.toString()]
+                  }
+                break
+                case ~/^(sys)\..*/:
+                  return
+                break
+                default:
+                  log.error "Could not match metric: ${metric.key}"
+                  return
+              }
+
+              log.trace "Server:${server} / SeriesName:${seriesName} / Tags:${mTags} / Points:${metric?.value?.size()}"
+
+              // Build final points structure without null elements
+              mData.addAll(
+                metric?.value?.collect { ts ->
+                  if (!seriesName) { return }
+                  //"${seriesName},${mTags.collect { k,v -> if (v instanceof String) { "$k=\"$v\"" } else {  "$k=$v" }}.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
+                  "${seriesName},${mTags.collect{ it }.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
+                }.findAll()
+              )
+
+            } catch(Exception e) {
+              StackTraceUtils.deepSanitize(e)
+              log.error "Building InfluxDB metric (${seriesName}): ${e?.message}"
+              log.debug "Building InfluxDB metric (${seriesName}): ${getStackTrace(e)}"
+              return
+            }
+
+            metricList[server] = mData
+          }
+        }
+      }
+    } catch (Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "Building InfluxDB metrics: ${e?.message}"
+      log.debug "Building InfluxDB metrics: ${getStackTrace(e)}"
+      return metricList
+    }
+
+    Date timeEnd = new Date()
+    log.info "Finished Building InfluxDB Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+
+    return metricList
+  }
+
+
   /////////////////////////////////////
   //  Events
   ////////////////
@@ -862,7 +972,7 @@ class vSphere2Graphite {
       ServiceInstance si = vSphereConnect(vc)
       if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
 
-      // Find and create p}rformance metrics (counters) hash table
+      // Find and create performance metrics (counters) hash table
       PerformanceManager perfMgr = getPerformanceManager(si)
       LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
       vSphereDisconnect(si)
@@ -894,7 +1004,7 @@ class vSphere2Graphite {
       ServiceInstance si = vSphereConnect(vc)
       if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
 
-      // Find and create p}rformance metrics (counters) hash table
+      // Find and create performance metrics (counters) hash table
       PerformanceManager perfMgr = getPerformanceManager(si)
       LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
 
@@ -953,7 +1063,7 @@ class vSphere2Graphite {
         if (!si) { log.error "Error establishing connection to the vSphere server: ${vc}"; return }
 
         try {
-          // Find and create p}rformance metrics (counters) hash table
+          // Find and create performance metrics (counters) hash table
           PerformanceManager perfMgr = getPerformanceManager(si)
           LinkedHashMap perfMetrics = getPerformanceCounters(perfMgr)
 
@@ -969,10 +1079,17 @@ class vSphere2Graphite {
 
 
           // Send metrics
-          if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
-            mc.send2GraphitePickle(buildMetrics(metricsData))
-          } else {
-            mc.send2Graphite(buildMetrics(metricsData))
+          if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
+            if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+              mc.send2GraphitePickle(buildMetrics(metricsData))
+            } else {
+              mc.send2Graphite(buildMetrics(metricsData))
+            }
+
+          } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
+            ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
+            HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
+            mc.send2InfluxDB(metricsDataInflux, parms)
           }
 
         } catch(Exception e) {

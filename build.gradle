@@ -2,12 +2,12 @@ apply plugin:'groovy'
 apply plugin:'distribution'
 
 def projectName = 'vSphere2Graphite'
-description = "$projectName - ESXi Performance Metric Integration with Graphite"
+description = "$projectName - ESXi Performance Metric Integration with Graphite & InfluxDB"
 
-group = 'com.allthingsmonitoring.vmware.vSphere2Graphite' // Class name
+group = 'com.allthingsmonitoring.vmware.vSphere2Graphite'
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.4'
+version = '1.5'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2015 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
