@@ -1,4 +1,4 @@
-cd /opt/vSphere2Graphite
+cd /opt/VSphere2Metrics
 export JAVA_HOME=/usr/java/latest
 export PATH=$JAVA_HOME/bin:$PATH:.
 
@@ -10,4 +10,4 @@ export PATH=$JAVA_HOME/bin:$PATH:.
 # Java 8
 export JAVA_OPTS="-d64 -server -Xms1g -Xmx5g -verbose:gc -XX:+UseG1GC -XX:+UseStringDeduplication -XX:StringDeduplicationAgeThreshold=4 -XX:ConcGCThreads=8 -XX:ParallelGCThreads=8 -XX:SurvivorRatio=8 -XX:G1ReservePercent=15 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:InitiatingHeapOccupancyPercent=25 -XX:MaxGCPauseMillis=500 -XX:G1HeapRegionSize=32 -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts  -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -XX:+PrintStringDeduplicationStatistics -Xloggc:$PWD/logs/gc_`date +%Y%m%d-%H%M%S`.log -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$PWD/logs/dump_`date +%Y%m%d-%H%M%S`.hprof"
 
-java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/vSphere2Graphite-1.4.jar $* 2>&1 |tee -a logs/vSphere2Graphite_console.log
+java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/VSphere2Metrics-1.5.jar $* 2>&1 |tee -a logs/VSphere2Metrics_console.log

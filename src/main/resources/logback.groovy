@@ -12,8 +12,8 @@ import ch.qos.logback.classic.LoggerContext
 import java.lang.management.ManagementFactory
 
 
-String baseName = 'vSphere2Graphite'
-ArrayList classNames = ['com.allthingsmonitoring.vmware.vSphere2Graphite','com.allthingsmonitoring.utils.MetricClient']
+String baseName = 'VSphere2Metrics'
+ArrayList classNames = ['com.allthingsmonitoring.vmware.VSphere2Metrics','com.allthingsmonitoring.utils.MetricClient']
 Map defaultLevels = setLoggerLevels()
 
 if (System.properties['app.env']?.toUpperCase() == 'DEBUG'){ statusListener(OnConsoleStatusListener) }

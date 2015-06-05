@@ -43,7 +43,7 @@ import com.allthingsmonitoring.utils.MetricClient
 
 
 @Slf4j
-class vSphere2Graphite {
+class VSphere2Metrics {
   TimeDuration lastExecTime = new TimeDuration(0, 0, 0, 0)
   TimeDuration startFromExecTime = new TimeDuration(0, 0, 0, 0)
 
@@ -54,7 +54,7 @@ class vSphere2Graphite {
   /**
    * Constructor
    */
-  vSphere2Graphite(String cfgFile='config.groovy') {
+  VSphere2Metrics(String cfgFile='config.groovy') {
     cfg = readConfigFile(cfgFile)
     Attributes manifest = getManifestInfo()
     log.info "Initialization: Class: ${this.class.name?.split('\\.')?.getAt(-1)} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
@@ -803,6 +803,7 @@ class vSphere2Graphite {
                   }
                 break
                 case ~/^(sys)\..*/:
+                  // TODO: Implement
                   return
                 break
                 default:
@@ -1149,7 +1150,7 @@ class vSphere2Graphite {
     if (!opt) { return } else if (opt.h | opt.arguments().size() != 0) { cli.usage(); return }
 
     try {
-      def main = new vSphere2Graphite()
+      VSphere2Metrics main = new VSphere2Metrics()
 
       // Parse 'Start from' parameter
       if (opt.sf) {

@@ -1,10 +1,10 @@
 apply plugin:'groovy'
 apply plugin:'distribution'
 
-def projectName = 'vSphere2Graphite'
+def projectName = 'VSphere2Metrics'
 description = "$projectName - ESXi Performance Metric Integration with Graphite & InfluxDB"
 
-group = 'com.allthingsmonitoring.vmware.vSphere2Graphite'
+group = 'com.allthingsmonitoring.vmware.VSphere2Metrics'
 archivesBaseName = projectName
 distsDirName = 'dist'
 version = '1.5'
