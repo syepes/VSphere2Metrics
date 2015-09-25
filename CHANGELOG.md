@@ -1,3 +1,7 @@
+# 1.5.1 (2015-09-25)
+- Fix InfluxDB integer and float types
+- Move to Gradle shadowJar
+
 # 1.5.0 (2015-06-06)
 - Add InfluxDB support and upgrade MetricClient
 - First public release

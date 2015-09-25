@@ -753,6 +753,8 @@ class VSphere2Metrics {
   HashMap buildMetricsInfluxDB(LinkedHashMap data) {
     Date timeStart = new Date()
     HashMap metricList = [:]
+    Closure strToFloat = { str -> String v = (str?.toFloat() < 0.1) ? str?.toBigDecimal().toPlainString() : str?.toBigDecimal().toPlainString().toBigDecimal() * 1.0; if (v == '0') { 0.0 } else { v } }
+
     log.debug "Bulding InfluxDB Metrics"
 
     try {
@@ -816,9 +818,10 @@ class VSphere2Metrics {
               // Build final points structure without null elements
               mData.addAll(
                 metric?.value?.collect { ts ->
-                  if (!seriesName) { return }
-                  //"${seriesName},${mTags.collect { k,v -> if (v instanceof String) { "$k=\"$v\"" } else {  "$k=$v" }}.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
-                  "${seriesName},${mTags.collect{ it }.join(',')} value=${ts?.value?.toBigDecimal()} ${ts?.key?.toLong()}"
+                  if (!seriesName || !ts?.value) { return }
+                  // Ugly Workaround that removes the scientific notation and force the number to be a Float (https://github.com/influxdb/influxdb/issues/3479)
+                  String val = strToFloat(ts?.value)
+                  "${seriesName},${mTags.collect{ it }.join(',')} value=${val} ${ts?.key?.toLong()}"
                 }.findAll()
               )
 
