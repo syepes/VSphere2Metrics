@@ -49,6 +49,7 @@ void setupAppenders(String baseName, Map defaultLevels) {
   String HOSTNAME = hostname?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase() // Get only the hostname of the FQDN
 
   appender("CONSOLE", ConsoleAppender) {
+    withJansi = true
     // Deny all events with a level below INFO, that is TRACE and DEBUG
     filter(ThresholdFilter) { level = defaultLevels['CONSOLE'] }
     encoder(PatternLayoutEncoder) {
@@ -61,7 +62,7 @@ void setupAppenders(String baseName, Map defaultLevels) {
     file = "./logs/${baseName}.log"
     filter(ThresholdFilter) { level = defaultLevels['FILE'] }
     encoder(PatternLayoutEncoder) {
-      pattern = "%-35(%d{dd-MM-yyyy - HH:mm:ss.SSS} [${HOSTNAME}] ${pid}:[%thread]) %highlight(%-5level) %logger - %msg%n%rEx"
+      pattern = "%-35(%d{dd-MM-yyyy - HH:mm:ss.SSS} [${HOSTNAME}] ${pid}:[%thread]) %-5level %logger - %msg%n%rEx"
     }
     rollingPolicy(FixedWindowRollingPolicy) {
       fileNamePattern = "./logs/${baseName}.log.%i"

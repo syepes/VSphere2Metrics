@@ -7,7 +7,11 @@ export PATH=$JAVA_HOME/bin:$PATH:.
 # Java 7/8
 #export JAVA_OPTS="-d64 -server -Xms1g -Xmx5g -verbose:gc -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts -XX:+AggressiveHeap -XX:+CMSParallelRemarkEnabled -XX:+CMSClassUnloadingEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -Xloggc:$PWD/logs/gc_`date +%Y%m%d-%H%M%S`.log -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$PWD/logs/dump_`date +%Y%m%d-%H%M%S`.hprof"
 
-# Java 8
-export JAVA_OPTS="-d64 -server -Xms1g -Xmx5g -verbose:gc -XX:+UseG1GC -XX:+UseStringDeduplication -XX:StringDeduplicationAgeThreshold=4 -XX:ConcGCThreads=8 -XX:ParallelGCThreads=8 -XX:SurvivorRatio=8 -XX:G1ReservePercent=15 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:InitiatingHeapOccupancyPercent=25 -XX:MaxGCPauseMillis=500 -XX:G1HeapRegionSize=32 -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts  -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -XX:+PrintStringDeduplicationStatistics -Xloggc:$PWD/logs/gc_`date +%Y%m%d-%H%M%S`.log -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$PWD/logs/dump_`date +%Y%m%d-%H%M%S`.hprof"
+# Java 8 - G1 Logging
+#export JAVA_OPTS="-d64 -server -Xms2g -Xmx6g -verbose:gc -XX:+UseG1GC -XX:+UseStringDeduplication -XX:StringDeduplicationAgeThreshold=4 -XX:ConcGCThreads=8 -XX:ParallelGCThreads=8 -XX:SurvivorRatio=8 -XX:G1ReservePercent=15 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:InitiatingHeapOccupancyPercent=25 -XX:MaxGCPauseMillis=500 -XX:G1HeapRegionSize=32 -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts  -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -XX:+PrintStringDeduplicationStatistics -Xloggc:$PWD/logs/gc_`date +%Y%m%d-%H%M%S`.log -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$PWD/logs/dump_`date +%Y%m%d-%H%M%S`.hprof"
 
-java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/VSphere2Metrics-1.5.jar $* 2>&1 |tee -a logs/VSphere2Metrics_console.log
+# Java 8 - G1
+export JAVA_OPTS="-d64 -server -Xms2g -Xmx6g -XX:+UseG1GC -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:MaxGCPauseMillis=200"
+
+
+java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/VSphere2Metrics-1.5.1.jar $* 2>&1 |tee -a logs/VSphere2Metrics_console.log

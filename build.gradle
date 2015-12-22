@@ -1,13 +1,3 @@
-buildscript {
-  repositories {
-    jcenter()
-  }
-  dependencies {
-    classpath 'org.kordamp.gradle:stats-gradle-plugin:0.1.+',
-              'com.github.jengelman.gradle.plugins:shadow:1.+'
-  }
-}
-
 plugins {
   id "org.kordamp.gradle.stats" version "0.1.5"
   id 'groovy'
@@ -52,7 +42,7 @@ compileJava {
 
 repositories {
   mavenLocal()
-  maven { url 'http://oss.sonatype.org/content/groups/public/' }
+  //maven { url 'http://oss.sonatype.org/content/groups/public/' }
   mavenCentral()
 }
 
@@ -62,6 +52,7 @@ dependencies {
           'org.slf4j:slf4j-api:1.+',
           'ch.qos.logback:logback-core:1.+',
           'ch.qos.logback:logback-classic:1.+',
+          'org.fusesource.jansi:jansi:1.+',
           'net.sf.opencsv:opencsv:2.+',
           'com.xlson.groovycsv:groovycsv:1.+',
           'dom4j:dom4j:1.6.+',
@@ -76,7 +67,7 @@ dependencies {
   groovyDoc 'org.codehaus.groovy:groovy-groovydoc:2.+',
             'org.codehaus.groovy:groovy-ant:2.+'
 
-  testCompile 'org.spockframework:spock-core:0.7-groovy-2.4', {
+  testCompile 'org.spockframework:spock-core:1.0-groovy-2.4', {
     exclude module: 'groovy-all'
   }
 }
@@ -100,10 +91,13 @@ groovydoc {
 
 shadowJar {
   zip64 true
+  group = 'shadow'
+  classifier = ''
 
   exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
   exclude 'META-INF/*.txt', 'META-INF/*.properties', '*.htm*', '*.properties'
-  exclude 'META-INF/INDEX.LIST', 'META-INF/DEPENDENCIES*', 'META-INF/LICENSE*', 'META-INF/README*','META-INF/NOTICE*'
+  exclude 'META-INF/INDEX.LIST', 'META-INF/DEPENDENCIES*', 'META-INF/LICENSE*', 'META-INF/README*','META-INF/NOTICE*', 'META-INF/DISC*'
+  exclude 'META-INF/licenses/**', 'META-INF/maven/**'
   mergeServiceFiles()
   mergeGroovyExtensionModules()
 
