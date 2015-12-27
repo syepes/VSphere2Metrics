@@ -11,7 +11,7 @@ description = "$projectName - ESXi Performance Metric Integration with Graphite 
 group = 'com.allthingsmonitoring.vmware.VSphere2Metrics'
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.5.1'
+version = '1.5.2'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2015 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
@@ -74,6 +74,7 @@ dependencies {
 
 
 groovydoc {
+  classpath -= configurations.groovyDoc
   groovyClasspath = configurations.groovyDoc
   destinationDir  = new File(( System.getProperty( 'groovydocDir' ) ?: project.buildDir.path + '/docs' ), ( project.version.contains( '-SNAPSHOT' ) ? '' : project.version ))
   includePrivate = true

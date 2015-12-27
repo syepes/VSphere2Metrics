@@ -188,6 +188,7 @@ class VSphere2Metrics {
 
     try {
       si = new ServiceInstance(new URL(vcs), cfg.vcs.user, decrypt(cfg.vcs.pwd), true)
+      si.getServerConnection().getUserSession().setUserAgent("${this.class.name?.split('\\.')?.getAt(-1)}")
       Date timeEnd = new Date()
       log.info "Connected to vSphere (${vcs}) in ${TimeCategory.minus(timeEnd,timeStart)}"
     } catch (InvalidLogin e) {
@@ -451,7 +452,7 @@ class VSphere2Metrics {
         def (rRate,tStamp) = pValue.getSampleInfoCSV().tokenize(',').collate( 2 ).transpose()
 
         // Convert incoming time to the Graphite TZ and to the epoch format
-        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs?.timezone,cfg?.destination?.timezone)).time.toString().toLong()/1000).toInteger() }
+        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs?.timezone,cfg?.destination?.timezone)).time.toString().toLong()?.div(1000)).toInteger() }
 
         // Create data structure metricData[Metric][[Timestamp:Value]] for all the instances
         // [net.usage_average-kiloBytesPerSecond:[1339152760000:0, 1339152780000:1, 1339152800000:0, 1339152820000:0, 1339152840000:0, 1339152860000:0]
@@ -772,36 +773,44 @@ class VSphere2Metrics {
               String type = hash?.value['type'] ?: ''
               String host = hash?.value['Host'] ?: ''
 
-              mTags << ['type': type.toString(), 'server': server.toString() ]
+              mTags << ['type': type, 'server': server ]
 
               if (host && host != server) {
-                mTags << ['host': host.toString()]
+                mTags << ['host': host]
               }
 
               switch ( metric.key ) {
-                case ~/^(cpu|net|mem|rescpu|virtualDisk|power|hbr|vflashModule)\..*/:
+                case ~/^(cpu|net|mem|rescpu|power|vflashModule|hbr|storageAdapter|storagePath|virtualDisk)\..*/:
                   Matcher m = Matcher.lastMatcher
                   String mType = m?.group(1)
                   seriesName = "${mType}_${metric.key?.split('\\.')?.getAt(-1)}"
                   String mInstance = metric?.key?.split('\\.')?.getAt(1 .. -2)?.getAt(0) ?: ''
 
                   if ( mInstance ) {
-                    mTags << ['instance': mInstance.toString()]
+                    mTags << ['instance': mInstance]
                   }
 
                 break
-                case ~/^(datastore|disk|storageAdapter|storagePath)\..*/:
+                case ~/^(datastore|disk)\..*/:
                   Matcher m = Matcher.lastMatcher
                   String mType = m?.group(1)
                   seriesName = "${mType}_${metric.key?.split('\\.')?.getAt(-1)}"
-                  String mInstanceType = metric?.key?.split('\\.')?.getAt(1 .. -2).getAt(0) ?: ''
-                  String mInstance = metric?.key?.split('\\.')?.getAt(2 .. -2).getAt(0) ?: ''
+                  String mInstanceType = metric?.key?.split('\\.')?.getAt(1 .. -2)?.getAt(0) ?: ''
+                  String mInstance = metric?.key?.split('\\.')?.getAt(2 .. -2)?.getAt(0) ?: ''
+
+                  // Workaround for cases like:
+                  //  'disk.avg.read_average-kiloBytesPerSecond'
+                  //  'disk.disk.HITACHI-041c.read_average-kiloBytesPerSecond'
+                  if (metric.key?.split('\\.')?.getAt(-1) == mInstance) {
+                    mInstance = mInstanceType
+                    mInstanceType = null
+                  }
 
                   if ( mInstanceType ) {
-                    mTags << ['instance_type': mInstanceType.toString()]
+                    mTags << ['instance_type': mInstanceType]
                   }
                   if ( mInstance ) {
-                    mTags << ['instance': mInstance.toString()]
+                    mTags << ['instance': mInstance]
                   }
                 break
                 case ~/^(sys)\..*/:
@@ -821,7 +830,7 @@ class VSphere2Metrics {
                   if (!seriesName || !ts?.value) { return }
                   // Ugly Workaround that removes the scientific notation and force the number to be a Float (https://github.com/influxdb/influxdb/issues/3479)
                   String val = strToFloat(ts?.value)
-                  "${seriesName},${mTags.collect{ it }.join(',')} value=${val} ${ts?.key?.toLong()}"
+                  "${seriesName},${mTags.sort().collect{ it }.join(',')} value=${val} ${ts?.key?.toInteger()}"
                 }.findAll()
               )
 
@@ -852,10 +861,11 @@ class VSphere2Metrics {
 
   /////////////////////////////////////
   //  Events
+  //  https://www.vmware.com/support/developer/vc-sdk/visdk2xpubs/ReferenceGuide/vim.event.Event.html
   ////////////////
 
   /**
-   * Finds vSphere events and associates them to the corresponding ESXi
+   * Finds vSphere events and associates them to the corresponding ESXi for Graphite
    *
    * @param si ServiceInstance
    * @param maxSample The maximum number of samples to be returned from server
@@ -908,9 +918,9 @@ class VSphere2Metrics {
 
       // Sum events generated in the same second
       events.each { e ->
+        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toInteger() ?: 0
         String esxHost = e?.getHost()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
         String eventType = e?.getClass()?.getName()?.split('\\.')?.getAt(-1)
-        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()/1000)?.toInteger() ?: 0
 
         if (esxHost && ts && eventType) {
           hostEvents[esxHost][ts][eventType]++
@@ -927,6 +937,95 @@ class VSphere2Metrics {
       log.debug "getEvants: ${getStackTrace(e)}"
     }
   }
+
+  /**
+   * Finds vSphere events for InfluxDB
+   *
+   * @param si ServiceInstance
+   * @param maxSample The maximum number of samples to be returned from server
+   * @return ArrayList of InfluxDB Metrics
+   */
+  ArrayList getEvantsInfluxDB(ServiceInstance si,int maxSample) {
+    try {
+      String vcHost = si.getServerConnection()?.getUrl()?.getHost()?.split('\\.')?.getAt(0)?.toLowerCase()
+
+      // Create a filter spec for querying events
+      EventFilterSpec efs = new EventFilterSpec()
+
+      // Limit to the children of root folder
+      EventFilterSpecByEntity eFilter = new EventFilterSpecByEntity()
+      eFilter.setEntity(si.getRootFolder().getMOR())
+      eFilter.setRecursion(EventFilterSpecRecursionOption.children)
+
+      Date vcDate = si?.currentTime()?.time
+      int eventTime
+
+      // When using the parameter 'sf'
+      if (startFromExecTime.toMilliseconds()) {
+        eventTime = (startFromExecTime.toMilliseconds()/1000).toInteger()
+      } else {
+        // Take into account the execution time and get the extra samples.
+        int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+        eventTime = ((maxSample + execDelaySamples) * 20)
+      }
+
+      // Current VC Date minus the eventTime
+      use(TimeCategory) {
+        vcDate -= eventTime?.second
+      }
+
+      EventFilterSpecByTime tFilter = new EventFilterSpecByTime()
+      tFilter.setBeginTime(vcDate?.toCalendar())
+      efs.setTime(tFilter)
+
+      EventManager em = si.getEventManager()
+      Event[] events = em.queryEvents(efs)
+      ArrayList mEvents = []
+
+      events.each { e ->
+        HashMap mTags = [:]
+        // TODO: Add parameterization
+        if (e?.getClass()?.getSuperclass()?.getName()?.split('\\.')?.getAt(-1) ==~ /^(Event|AlarmEvent|AuthorizationEvent|CustomFieldEvent|ScheduledTaskEvent|SessionEvent|TaskEvent|TemplateUpgradeEvent|UpgradeEvent).*/) { return }
+
+        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toInteger() ?: 0
+        String eventClass = e?.getClass()?.getSuperclass()?.getName()?.split('\\.')?.getAt(-1)
+        String eventType = e?.getClass()?.getName()?.split('\\.')?.getAt(-1)
+        String eventDc = e?.getDatacenter()?.getName()?.replaceAll(~/([\s,])/, "\\\\\$1")
+        String eventCr = e?.getComputeResource()?.getName()?.replaceAll(~/([\s,])/, "\\\\\$1")
+
+        String esxHost = e?.getHost()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        String esxGuest = e?.getVm()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+
+        mTags << ['class': eventClass, 'type': eventType, 'vsphere': vcHost]
+
+        if (eventDc) { mTags << ['datacenter': eventDc] }
+        if (eventCr) {
+          if (e?.getHost()?.getName()?.toLowerCase() == e?.getComputeResource()?.getName()?.toLowerCase()) {
+            mTags << ['computeresource': eventCr?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()]
+          } else {
+            mTags << ['computeresource': eventCr]
+          }
+        }
+
+        if (esxHost && esxHost != esxGuest) {
+          mTags << ['host': esxHost]
+        }
+        if (esxGuest) { mTags << ['server': esxGuest] }
+
+        mEvents << "events,${mTags.sort().collect{ it }.join(',')} value=1i ${ts ?: ''}"
+      }
+      log.info "Found ${mEvents?.size() ?: 0}/${events?.size() ?: 0} Events"
+
+      return mEvents
+
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "getEvantsInfluxDB: ${e?.message}"
+      log.debug "getEvantsInfluxDB: ${getStackTrace(e)}"
+      return []
+    }
+  }
+
 
 
   // Converts a time stamp from one Time zone (sourceTZ) another (destTZ)
@@ -1079,11 +1178,12 @@ class VSphere2Metrics {
           LinkedHashMap metricsData = [:]
           getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
           getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
-          getEvants(si,cfg.vcs.perf_max_samples,metricsData)
 
 
           // Send metrics
           if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
+            getEvants(si,cfg.vcs.perf_max_samples,metricsData)
+
             if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
               mc.send2GraphitePickle(buildMetrics(metricsData))
             } else {
@@ -1091,7 +1191,10 @@ class VSphere2Metrics {
             }
 
           } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
+            ArrayList eventsDataInflux = getEvantsInfluxDB(si,cfg.vcs.perf_max_samples)
             ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
+            metricsDataInflux.addAll(eventsDataInflux)
+
             HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
             mc.send2InfluxDB(metricsDataInflux, parms)
           }

@@ -1,3 +1,7 @@
+# 1.5.2 (2015-12-27)
+- Add InfluxDB vSphere Events
+- Minor InfluxDB vSphere storage* Metrics fix
+
 # 1.5.1 (2015-09-25)
 - Fix InfluxDB integer and float types
 - Move to Gradle shadowJar
