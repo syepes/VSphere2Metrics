@@ -653,7 +653,7 @@ class VSphere2Metrics {
 
         // Get Multipath info
         HostMultipathInfo hmi = hsdi?.getMultipathInfo() // HostMultipathInfo
-        hmi.getLun().each { // HostMultipathInfoLogicalUnit
+        hmi?.getLun().each { // HostMultipathInfoLogicalUnit
           HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
           hmips.each { p ->
             pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName()]
