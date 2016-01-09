@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="UTF-8">
+    <title>Vsphere2metrics by syepes</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="stylesheets/normalize.css" media="screen">
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">Vsphere2metrics</h1>
+      <h2 class="project-tagline">VMware vSphere Performance Metrics Integration with Graphite &amp; InfluxDB</h2>
+      <a href="https://github.com/syepes/VSphere2Metrics" class="btn">View on GitHub</a>
+      <a href="https://github.com/syepes/VSphere2Metrics/zipball/master" class="btn">Download .zip</a>
+      <a href="https://github.com/syepes/VSphere2Metrics/tarball/master" class="btn">Download .tar.gz</a>
+    </section>
+
+    <section class="main-content">
+      <h1>
+<a id="vsphere2metrics" class="anchor" href="#vsphere2metrics" aria-hidden="true"><span class="octicon octicon-link"></span></a>vSphere2Metrics</h1>
+
+<hr>
+
+<p>vSphere2Metrics is a performance metric collector for <a href="https://www.vmware.com/products/vsphere">vSphere</a> that supports <a href="http://graphite.wikidot.com/">Graphite</a> and <a href="https://influxdata.com/time-series-platform/influxdb/">InfluxDB</a> as its storage engines.</p>
+
+<p>Essentially is gathers all the raw 20 second performance metrics from every the Hosts and VM’s registered in the vSphere.
+Once the metrics have been collected and stored in your preferred storage engine there is no limits to which kind of performance analytics and dashboards you can construct.</p>
+
+<p>A Brief Overview  of how vSphere2Metrics works:</p>
+
+<pre><code>- Parallely connects to each of the specified vSphere servers (vcs.urls)
+- Gathers the last events and performance metrics samples (vcs.perf_max_samples) of all the registered Hosts and VMs
+- Constructs the according Graphite or InfluxDB metrics
+- Sends the previously built and buffered metrics using MetricClient (destination.type)
+- If it fails, metrics get buffered until the next run, if not it just sleeps until the next execution (vcs.perf_max_samples)
+- The process start all over again
+</code></pre>
+
+<h2>
+<a id="features" class="anchor" href="#features" aria-hidden="true"><span class="octicon octicon-link"></span></a>Features</h2>
+
+<ul>
+<li>Collects all <a href="http://pubs.vmware.com/vsphere-60/index.jsp#com.vmware.wssdk.apiref.doc/vim.PerformanceManager.html">available metrics</a> concurrently (<a href="http://gpars.codehaus.org">GPars</a>)</li>
+<li>Metrics are buffered if the storage engines is down (<a href="https://github.com/syepes/MetricClient">MetricClient</a>)</li>
+<li>Supports Graphite Standard mode (UnCompressed) or Pickle (Serializing)</li>
+<li>Supports InfluxDB HTTP UnCompressed or Compresses Line Protocol</li>
+<li>Continues collection mode (daemon) or one shoot command line.</li>
+<li>Supports vSphere 4.x, 5.x and 6.0</li>
+</ul>
+
+<h3>
+<a id="examples" class="anchor" href="#examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Examples</h3>
+
+<p><img src="https://raw.githubusercontent.com/syepes/vSphere2Metrics/gh-pages/images/PerfGlobal.png" alt="Perf Global">
+<img src="https://raw.githubusercontent.com/syepes/vSphere2Metrics/gh-pages/images/PerfESXi.png" alt="Perf ESXi"></p>
+
+<h2>
+<a id="requirements" class="anchor" href="#requirements" aria-hidden="true"><span class="octicon octicon-link"></span></a>Requirements</h2>
+
+<ul>
+<li>
+<a href="http://www.java.com">Java</a> 1.7+</li>
+<li>
+<a href="http://www.gradle.org">Gradle</a> (Only if building the project from src)</li>
+</ul>
+
+<h2>
+<a id="installation-and-configuration" class="anchor" href="#installation-and-configuration" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installation and Configuration</h2>
+
+<p>Take a look at the vSphere2Metrics <a href="https://github.com/syepes/vSphere2Metrics/wiki">Wiki</a></p>
+
+<h2>
+<a id="contribute" class="anchor" href="#contribute" aria-hidden="true"><span class="octicon octicon-link"></span></a>Contribute</h2>
+
+<p>If you have any idea for an improvement or find a bug do not hesitate in opening an issue.
+And if you have the time clone this repo and submit a pull request to help improve the vSphere2Metrics project.</p>
+
+<h2>
+<a id="license" class="anchor" href="#license" aria-hidden="true"><span class="octicon octicon-link"></span></a>License</h2>
+
+<p>vSphere2Metrics is distributed under <a href="http://www.apache.org/licenses/LICENSE-2.0">Apache 2.0 License</a>.</p>
+
+<p>Copyright © 2016, <a href="mailto:syepes@gmail.com">Sebastian YEPES F.</a></p>
+
+<h2>
+<a id="used-open-source-projects" class="anchor" href="#used-open-source-projects" aria-hidden="true"><span class="octicon octicon-link"></span></a>Used open source projects</h2>
+
+<p><a href="http://groovy.codehaus.org">Groovy</a> |
+<a href="http://gpars.codehaus.org">GPars</a> |
+<a href="http://logback.qos.ch">Logback</a> |
+<a href="http://www.doublecloud.net/product/vijavang.php">vijava</a> |
+<a href="https://github.com/syepes/MetricClient">MetricClient</a></p>
+
+      <footer class="site-footer">
+        <span class="site-footer-owner"><a href="https://github.com/syepes/VSphere2Metrics">Vsphere2metrics</a> is maintained by <a href="https://github.com/syepes">syepes</a>.</span>
+
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
+      </footer>
+
+    </section>
+
+  
+  </body>
+</html>
