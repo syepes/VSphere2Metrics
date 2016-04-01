@@ -48,7 +48,7 @@ class VSphere2Metrics {
   TimeDuration startFromExecTime = new TimeDuration(0, 0, 0, 0)
 
   ConfigObject cfg
-  MetricClient mc
+  MetricClient mc,mcG,mcI
 
 
   /**
@@ -63,6 +63,9 @@ class VSphere2Metrics {
       mc = new MetricClient(cfg.graphite.host, cfg.graphite.port, 'tcp', cfg?.graphite?.prefix)
     } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
       mc = new MetricClient(cfg.influxdb.host, cfg.influxdb.port, cfg.influxdb.protocol, null, cfg.influxdb.auth)
+    } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
+      mcG = new MetricClient(cfg.graphite.host, cfg.graphite.port, 'tcp', cfg?.graphite?.prefix)
+      mcI = new MetricClient(cfg.influxdb.host, cfg.influxdb.port, cfg.influxdb.protocol, null, cfg.influxdb.auth)
     } else {
       throw new Exception("Unknown configured destination: ${cfg?.destination?.type}")
     }
@@ -402,7 +405,6 @@ class VSphere2Metrics {
   //@TimedInterrupt(value=300L, unit=TimeUnit.SECONDS, applyToAllClasses=false, applyToAllMembers=false, checkOnMethodStart=false)
   PerfEntityMetricBase[] getPerfMetrics(PerformanceManager perfMgr,int maxSample,ManagedEntity vm) {
     GParsPool.withPool {
-      Date timeStart = new Date()
       String vmName = vm?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
       Long queryTimeout = cfg?.vcs?.perfquery_timeout?.toLong() ?: 60
 
@@ -421,9 +423,6 @@ class VSphere2Metrics {
       // Generate an TimeoutException if the queryTimeout is exceeded
       Future result = { perfMgr.queryPerf(qSpec) }.async().call()
       PerfEntityMetricBase[] pValues = result.get(queryTimeout, TimeUnit.SECONDS)
-
-      Date timeEnd = new Date()
-      log.debug "Collected queryPerf metrics for ${vmName} in ${TimeCategory.minus(timeEnd,timeStart)}"
 
       return pValues
     }
@@ -473,7 +472,7 @@ class VSphere2Metrics {
 
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^disk.*/) {
             if (hi['disk'][instID]?.containsKey('type')) {
-              instName = "${hi['disk'][instID]['type']}.${hi['disk'][instID]['vendor']}-${instID[-4..-1]}"
+              instName = "${hi['disk'][instID]['type']}.${hi['disk'][instID]['vendor']}-${instID[-4..-1]}".replaceAll(~/\s+/, '-')
             } else {
               log.warn "The disk Instance: ${instID} has no type"
             }
@@ -482,7 +481,7 @@ class VSphere2Metrics {
             if (hi['storagePath'][instID]?.containsKey('pathname')) {
               instName = "${hi['storagePath'][instID]['pathname']}"
             } else {
-              log.warn "The storagePath Instance: ${instID} has no pathname"
+              log.debug "The storagePath Instance: ${instID} has no pathname"
             }
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^sys.*/) {
             if (instID == '/') {
@@ -493,10 +492,6 @@ class VSphere2Metrics {
           } else {
             instName = instID ?: 'FIXME'
           }
-
-          // TODO: Try to optimize this
-          //def mpath = "${perfMetrics[it.getId().getCounterId()]['Metric']}.${instName}".replaceAll(~/[:]/, '-')
-          //mpath = mpath.replaceAll(/(\w+).(.*)/,/$1.$instName.$2/).replaceAll(~/[:]/, '-')
 
           // Put the metric instance in the middle (metric-type.instance.metric)
           String mpath
@@ -535,8 +530,10 @@ class VSphere2Metrics {
    * @param metricsData Referenca to the shared variable
    */
   void getGuestMetrics(ServiceInstance si,PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
+    Date timeStart = new Date()
 
     vms.each { ManagedEntity vm ->
+      Date timeStartVM = new Date()
       PerfEntityMetricBase[] pValues
       String vmName,esxHost
 
@@ -551,7 +548,7 @@ class VSphere2Metrics {
         pValues = getPerfMetrics(perfMgr,maxSample,vm)
       } catch (TimeoutException e) {
         StackTraceUtils.deepSanitize(e)
-        log.error "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
+        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
 
       } catch (Exception e) {
         StackTraceUtils.deepSanitize(e)
@@ -561,10 +558,13 @@ class VSphere2Metrics {
 
       if (vmName && esxHost && pValues) {
         metricsData[(vmName)] = [type:'Guest', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
+        log.debug "Collected metrics for VM: ${vmName} (${esxHost}) in ${TimeCategory.minus(new Date(),timeStartVM)}"
       } else {
         log.debug "Ignoring metrics from the VM: ${vmName} (${esxHost})"
       }
     }
+
+    log.info "Collected Guest metrics in ${TimeCategory.minus(new Date(),timeStart)}"
   }
 
 
@@ -579,8 +579,10 @@ class VSphere2Metrics {
    * @param metricsData Referenca to the shared variable
    */
   void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
+    Date timeStart = new Date()
 
     hosts.each { ManagedEntity host ->
+      Date timeStartHost = new Date()
       PerfEntityMetricBase[] pValues
       String esxHost
 
@@ -601,13 +603,14 @@ class VSphere2Metrics {
         log.debug "Could not retrieve metrics for the Host: ${esxHost} ${getStackTrace(e)}"
       }
 
-
       if (esxHost && pValues) {
         metricsData[(esxHost)] = [type:'Host', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
+        log.debug "Collected metrics for Host: ${esxHost} in ${TimeCategory.minus(new Date(),timeStartHost)}"
       } else {
         log.debug "Ignoring metrics for the Host: ${esxHost}"
       }
     }
+    log.info "Collected Host metrics in ${TimeCategory.minus(new Date(),timeStart)}"
   }
 
   /**
@@ -643,7 +646,7 @@ class VSphere2Metrics {
           HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
           if (hfsv.metaClass.respondsTo(hfsv, 'getUuid')) {
             dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
-          } else { log.debug "getHostInfo: Type:${hfsv.type} (${hfsv.getClass().getName()})" }
+          } else { log.trace "getHostInfo: Type:${hfsv.type} (${hfsv.getClass().getName()})" }
         }
 
         // Get disk info
@@ -810,7 +813,7 @@ class VSphere2Metrics {
                     mTags << ['instance_type': mInstanceType]
                   }
                   if ( mInstance ) {
-                    mTags << ['instance': mInstance]
+                    mTags << ['instance': mInstance.replaceAll(~/\s+/, '-')]
                   }
                 break
                 case ~/^(sys)\..*/:
@@ -873,6 +876,7 @@ class VSphere2Metrics {
    */
   void getEvants(ServiceInstance si,int maxSample,LinkedHashMap metricsData) {
     try {
+      Date timeStart = new Date()
       // Create a filter spec for querying events
       EventFilterSpec efs = new EventFilterSpec()
 
@@ -912,7 +916,6 @@ class VSphere2Metrics {
 
       EventManager em = si.getEventManager()
       Event[] events = em.queryEvents(efs)
-      log.info "Found ${events?.size() ?: 0} events"
 
       MapWithDefault hostEvents = [:].withDefault { [:].withDefault { [:].withDefault { 0.toBigDecimal() } } }
 
@@ -930,6 +933,7 @@ class VSphere2Metrics {
       hostEvents.each { String esxHost, MapWithDefault evts ->
         metricsData[(esxHost)] = [type:'Events', Host:esxHost, Events:evts]
       }
+      log.info "Found ${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),timeStart)}"
 
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
@@ -947,6 +951,7 @@ class VSphere2Metrics {
    */
   ArrayList getEvantsInfluxDB(ServiceInstance si,int maxSample) {
     try {
+      Date timeStart = new Date()
       String vcHost = si.getServerConnection()?.getUrl()?.getHost()?.split('\\.')?.getAt(0)?.toLowerCase()
 
       // Create a filter spec for querying events
@@ -1014,8 +1019,8 @@ class VSphere2Metrics {
 
         mEvents << "events,${mTags.sort().collect{ it }.join(',')} value=1i ${ts ?: ''}"
       }
-      log.info "Found ${mEvents?.size() ?: 0}/${events?.size() ?: 0} Events"
 
+      log.info "Found ${mEvents?.size() ?: 0}/${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),timeStart)}"
       return mEvents
 
     } catch(Exception e) {
@@ -1197,6 +1202,22 @@ class VSphere2Metrics {
 
             HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
             mc.send2InfluxDB(metricsDataInflux, parms)
+          } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
+            // Graphite
+            getEvants(si,cfg.vcs.perf_max_samples,metricsData)
+            if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+              mcG.send2GraphitePickle(buildMetrics(metricsData))
+            } else {
+              mcG.send2Graphite(buildMetrics(metricsData))
+            }
+
+            // InfluxDB
+            ArrayList eventsDataInflux = getEvantsInfluxDB(si,cfg.vcs.perf_max_samples)
+            ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
+            metricsDataInflux.addAll(eventsDataInflux)
+
+            HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
+            mcI.send2InfluxDB(metricsDataInflux, parms)
           }
 
         } catch(Exception e) {

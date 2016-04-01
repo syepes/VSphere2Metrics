@@ -1,8 +1,15 @@
+buildscript {
+  dependencies {
+    classpath 'org.kordamp.gradle:stats-gradle-plugin:0.1.+',
+              'com.github.jengelman.gradle.plugins:shadow:1.+'
+  }
+}
+
 plugins {
   id "org.kordamp.gradle.stats" version "0.1.5"
   id 'groovy'
   id 'distribution'
-  id 'com.github.johnrengelman.shadow' version '1.2.2'
+  id 'com.github.johnrengelman.shadow' version '1.2.3'
 }
 
 def projectName = 'VSphere2Metrics'
@@ -11,7 +18,7 @@ description = "$projectName - ESXi Performance Metric Integration with Graphite 
 group = 'com.allthingsmonitoring.vmware.VSphere2Metrics'
 archivesBaseName = projectName
 distsDirName = 'dist'
-version = '1.5.2'
+version = '1.5.3'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2015 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'

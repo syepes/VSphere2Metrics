@@ -1,3 +1,7 @@
+# 1.5.3 (2016-04-01)
+- Add timing metrics on the collecting methods
+- Support sending metrics to both Graphite and InfluxDB at the same time
+
 # 1.5.2 (2015-12-27)
 - Add InfluxDB vSphere Events
 - Minor InfluxDB vSphere storage* Metrics fix

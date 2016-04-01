@@ -8,7 +8,7 @@ vcs.perf_max_samples       = 15                // Last 1 Minute (3x20s = 60s)
                                                // Last 5 Minute (15x20s = 300s)
                                                // Last 10 Minute (30x20s = 600s)
 
-destination.type          = 'Graphite'         // 'Graphite', 'InfluxDB'
+destination.type          = 'Graphite'         // 'Graphite', 'InfluxDB', 'Both'
 destination.timezone      = 'Europe/Paris'
 
 // Graphite Settings
