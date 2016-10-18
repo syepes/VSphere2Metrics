@@ -1,0 +1,1017 @@
+{
+  "id": 4,
+  "title": "ESXi.Global-Status",
+  "originalTitle": "ESXi.Global-Status",
+  "tags": [
+    "System"
+  ],
+  "style": "dark",
+  "timezone": "browser",
+  "editable": true,
+  "hideControls": true,
+  "sharedCrosshair": true,
+  "rows": [
+    {
+      "collapsable": true,
+      "collapse": false,
+      "editable": true,
+      "height": "350px",
+      "notice": false,
+      "panels": [
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 1,
+          "interactive": true,
+          "interval": "5m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "alignAsTable": true,
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "sort": "avg",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "show_query": false,
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "sortByMaxima(aliasByNode(averageAbove(scale(ESXi.*.Guest.*.cpu.avg.usage_average-percent,0.01),20),3))"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "+20% Avg - CPU Usage VM's - All ESXi",
+          "tooltip": {
+            "msResolution": false,
+            "query_as_alias": true,
+            "shared": true,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": 0,
+              "max": 100,
+              "logBase": 1,
+              "format": "short",
+              "label": "%"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "logBase": 1,
+              "format": "short"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        },
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 2,
+          "interactive": true,
+          "interval": "5m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "sortByMaxima(aliasByNode(averageAbove(scale(ESXi.*.Guest.*.cpu.avg.ready_summation-millisecond,0.005),2),3))"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "+2% Average - CPU Ready VM's - All ESXi",
+          "tooltip": {
+            "msResolution": false,
+            "query_as_alias": true,
+            "shared": true,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": 0,
+              "max": null,
+              "logBase": 1,
+              "format": "short",
+              "label": "%"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "logBase": 1,
+              "format": "none"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        }
+      ],
+      "showTitle": true,
+      "title": "CPU Usage"
+    },
+    {
+      "collapsable": true,
+      "collapse": false,
+      "editable": true,
+      "height": "350px",
+      "notice": false,
+      "panels": [
+        {
+          "aliasColors": {
+            "Sum IOPS DC1": "#DEDAF7"
+          },
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 3,
+          "interactive": true,
+          "interval": "10m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [
+            {
+              "alias": "Sum IOPS DC1",
+              "yaxis": 2
+            }
+          ],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "alias(sumSeries(ESXi.dc1*.Host.disk.disk.*.commandsAveraged_average-number),\"Sum IOPS DC1\")"
+            },
+            {
+              "refId": "B",
+              "target": "aliasByNode(highestMax(ESXi.dc1*.Guest.*.disk.disk.*.commandsAveraged_average-number,8),3)"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "Max/Sum IOPS Disk for DC1",
+          "tooltip": {
+            "msResolution": false,
+            "query_as_alias": true,
+            "shared": true,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": 0,
+              "max": null,
+              "logBase": 1,
+              "format": "short"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "logBase": 1,
+              "format": "short"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        },
+        {
+          "aliasColors": {
+            "Sum IOPS DC2": "#DEDAF7"
+          },
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 4,
+          "interactive": true,
+          "interval": "10m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [
+            {
+              "alias": "Sum IOPS DC2",
+              "yaxis": 2
+            }
+          ],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "alias(sumSeries(ESXi.dc2*.Host.disk.disk.*.commandsAveraged_average-number),\"Sum IOPS DC2\")"
+            },
+            {
+              "refId": "B",
+              "target": "aliasByNode(highestMax(ESXi.dc2*.Guest.*.disk.disk.*.commandsAveraged_average-number,8),3)"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "Max/Sum IOPS Disk for DC2",
+          "tooltip": {
+            "msResolution": false,
+            "query_as_alias": true,
+            "shared": true,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": 0,
+              "max": null,
+              "logBase": 1,
+              "format": "short"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "logBase": 1,
+              "format": "short"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        }
+      ],
+      "showTitle": true,
+      "title": "IOPS Datacenter"
+    },
+    {
+      "collapsable": true,
+      "collapse": false,
+      "editable": true,
+      "height": "350px",
+      "notice": false,
+      "panels": [
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 5,
+          "interactive": true,
+          "interval": "5m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "sortByMaxima(groupByNode(ESXi.dc1*.Host.datastore.VMFS.DC1_C{1,2,3}_VMFS5_*.{numberWriteAveraged_average-number,numberReadAveraged_average-number},5,\"sumSeries\"))"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "DC1 - Storage aggregated IOPS",
+          "tooltip": {
+            "query_as_alias": true,
+            "shared": false,
+            "value_type": "cumulative",
+            "msResolution": false
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "short"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "short"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        },
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 6,
+          "interactive": true,
+          "interval": "5m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "sortByMaxima(averageAbove(groupByNode(ESXi.dc2*.Guest.*.disk.disk.*.{numberWriteAveraged_average-number,numberReadAveraged_average-number},3,\"sumSeries\"),30))"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "DC2 VM's Read+Write IOPS >= 30",
+          "tooltip": {
+            "query_as_alias": true,
+            "shared": false,
+            "value_type": "cumulative",
+            "msResolution": false
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "short"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "short"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        }
+      ],
+      "showTitle": true,
+      "title": "IOPS DataStores"
+    },
+    {
+      "collapsable": true,
+      "collapse": false,
+      "editable": true,
+      "height": "350px",
+      "notice": false,
+      "panels": [
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 0,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 13,
+          "interactive": true,
+          "interval": "10m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": true,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "alias(scale(sumSeries(ESXi.dc1*z2*.Host.net.avg.usage_average-kiloBytesPerSecond),1024),'Z2 DC1')"
+            },
+            {
+              "refId": "B",
+              "target": "alias(scale(sumSeries(ESXi.dc1*z3*.Host.net.avg.usage_average-kiloBytesPerSecond),1024),'Z3 DC1')"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "Network traffic TR/RX Sum (KBs) - All ESXi",
+          "tooltip": {
+            "query_as_alias": true,
+            "shared": false,
+            "value_type": "cumulative",
+            "msResolution": false
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "bytes"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "none"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        },
+        {
+          "aliasColors": {},
+          "annotate": {
+            "enable": false,
+            "field": "_type",
+            "query": "*",
+            "size": 20,
+            "sort": [
+              "_score",
+              "desc"
+            ]
+          },
+          "auto_int": true,
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "fill": 1,
+          "grid": {
+            "max": null,
+            "min": 0,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 14,
+          "interactive": true,
+          "interval": "10m",
+          "intervals": [
+            "auto",
+            "1s",
+            "1m",
+            "5m",
+            "10m",
+            "30m",
+            "1h",
+            "3h",
+            "12h",
+            "1d",
+            "1w",
+            "1y"
+          ],
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": true,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "legend_counts": true,
+          "lines": true,
+          "linewidth": 1,
+          "loadingEditor": false,
+          "nullPointMode": "null as zero",
+          "options": false,
+          "percentage": true,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "resolution": 100,
+          "scale": 1,
+          "seriesOverrides": [],
+          "span": 6,
+          "spyable": true,
+          "stack": false,
+          "steppedLine": true,
+          "targets": [
+            {
+              "refId": "A",
+              "target": "groupByNode(ESXi.*.Host.net.avg.{droppedRx_summation-number,droppedRx_summation-number},1,\"sumSeries\")"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "timezone": "browser",
+          "title": "Dropped packets",
+          "tooltip": {
+            "query_as_alias": true,
+            "shared": false,
+            "value_type": "cumulative",
+            "msResolution": false
+          },
+          "type": "graph",
+          "zerofill": true,
+          "zoomlinks": false,
+          "yaxes": [
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "short"
+            },
+            {
+              "show": true,
+              "min": null,
+              "max": null,
+              "format": "none"
+            }
+          ],
+          "xaxis": {
+            "show": true
+          }
+        }
+      ],
+      "showTitle": true,
+      "title": "Network"
+    }
+  ],
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timepicker": {
+    "collapse": false,
+    "enable": true,
+    "notice": false,
+    "now": true,
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h"
+    ],
+    "status": "Stable",
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d",
+      "60d",
+      "90d",
+      "180d",
+      "1y",
+      "2y"
+    ],
+    "type": "timepicker"
+  },
+  "templating": {
+    "enable": false,
+    "list": []
+  },
+  "annotations": {
+    "enable": true,
+    "list": [
+      {
+        "datasource": "InfluxDB - ESXi",
+        "enable": false,
+        "iconColor": "rgb(130, 255, 0)",
+        "iconSize": 15,
+        "lineColor": "rgba(247, 255, 0, 0.59)",
+        "name": "EventsHost",
+        "query": "SELECT * FROM h5m.events WHERE type =~ /Host.*/ AND $timeFilter",
+        "showLine": true,
+        "tagsColumn": "type",
+        "target": "ESXi.*.Events.Host*",
+        "textColumn": "host",
+        "titleColumn": "class",
+        "type": "graphite metric"
+      },
+      {
+        "datasource": "InfluxDB - ESXi",
+        "enable": false,
+        "iconColor": "rgb(255, 0, 0)",
+        "iconSize": 13,
+        "lineColor": "rgba(0, 45, 255, 0.59)",
+        "name": "EventsGuest",
+        "query": "SELECT * FROM h5m.events WHERE type =~ /Vm.*/ AND $timeFilter",
+        "showLine": true,
+        "tagsColumn": "type",
+        "target": "ESXi.*.Events.Vm*",
+        "textColumn": "host",
+        "titleColumn": "class",
+        "type": "graphite metric"
+      }
+    ]
+  },
+  "schemaVersion": 12,
+  "version": 4,
+  "links": []
+}

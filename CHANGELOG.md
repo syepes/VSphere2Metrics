@@ -1,3 +1,6 @@
+# [Unreleased]
+- Added some Grafana templates (Graphite)
+
 # 1.5.3 (2016-04-01)
 - Add timing metrics on the collecting methods
 - Support sending metrics to both Graphite and InfluxDB at the same time
