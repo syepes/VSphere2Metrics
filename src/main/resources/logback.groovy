@@ -12,7 +12,7 @@ import ch.qos.logback.classic.LoggerContext
 import java.lang.management.ManagementFactory
 
 
-String baseName = 'VSphere2Metrics'
+String baseName = 'vsphere2metrics'
 ArrayList classNames = ['com.allthingsmonitoring.vmware.VSphere2Metrics','com.allthingsmonitoring.utils.MetricClient']
 Map defaultLevels = setLoggerLevels()
 

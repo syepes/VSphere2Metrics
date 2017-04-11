@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cd /opt/VSphere2Metrics
+cd /opt/vsphere2metrics
 mkdir -p logs
 
 export JAVA_HOME=/usr/java/latest
@@ -18,4 +18,4 @@ export PATH=$JAVA_HOME/bin:$PATH:.
 export JAVA_OPTS="-d64 -server -Xms2g -Xmx6g -XX:+UseG1GC -XX:+UseFastAccessorMethods -XX:+UseCompressedOops -XX:+AggressiveOpts -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:+ScavengeBeforeFullGC -XX:MaxGCPauseMillis=200"
 
 
-java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/VSphere2Metrics-1.5.3.jar $* 2>&1 |tee -a logs/VSphere2Metrics_console.log
+java $JAVA_OPTS -Dpid=$$ -Dapp.env=PROD -jar $PWD/vsphere2metrics.jar $* 2>&1 |tee -a logs/vsphere2metrics_console.log

@@ -12,6 +12,8 @@ import static ch.qos.logback.classic.Level.*
 import org.codehaus.groovy.runtime.StackTraceUtils
 import groovyx.gpars.GParsPool
 import groovyx.gpars.util.PoolUtils
+import groovy.json.JsonSlurper
+import groovy.json.internal.LazyMap
 
 import com.xlson.groovycsv.CsvParser
 import java.util.regex.Matcher
@@ -49,6 +51,9 @@ class VSphere2Metrics {
 
   ConfigObject cfg
   MetricClient mc,mcG,mcI
+  LinkedHashMap selfMon = [:]
+
+  Closure cleanName = { String str -> str?.split('\\.')?.getAt(0)?.trim().replaceAll(~/[\s-\.]/, "-")?.toLowerCase() }
 
 
   /**
@@ -60,12 +65,12 @@ class VSphere2Metrics {
     log.info "Initialization: Class: ${this.class.name?.split('\\.')?.getAt(-1)} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
 
     if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
-      mc = new MetricClient(cfg.graphite.host, cfg.graphite.port, 'tcp', cfg?.graphite?.prefix)
+      mc = new MetricClient(server_host: cfg.graphite.host, server_port: cfg.graphite.port, prefix: cfg?.graphite?.prefix)
     } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
-      mc = new MetricClient(cfg.influxdb.host, cfg.influxdb.port, cfg.influxdb.protocol, null, cfg.influxdb.auth)
+      mc = new MetricClient(server_host: cfg.influxdb.host, server_port: cfg.influxdb.port, protocol: cfg.influxdb.protocol, server_auth: cfg.influxdb.auth)
     } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
-      mcG = new MetricClient(cfg.graphite.host, cfg.graphite.port, 'tcp', cfg?.graphite?.prefix)
-      mcI = new MetricClient(cfg.influxdb.host, cfg.influxdb.port, cfg.influxdb.protocol, null, cfg.influxdb.auth)
+      mcG = new MetricClient(server_host: cfg.graphite.host, server_port: cfg.graphite.port, prefix: cfg?.graphite?.prefix)
+      mcI = new MetricClient(server_host: cfg.influxdb.host, server_port: cfg.influxdb.port, protocol: cfg.influxdb.protocol, server_auth: cfg.influxdb.auth)
     } else {
       throw new Exception("Unknown configured destination: ${cfg?.destination?.type}")
     }
@@ -186,14 +191,13 @@ class VSphere2Metrics {
    * @return ServiceInstance
    */
   ServiceInstance vSphereConnect(String vcs) {
-    Date timeStart = new Date()
+    Date ts_start = new Date()
     ServiceInstance si
 
     try {
       si = new ServiceInstance(new URL(vcs), cfg.vcs.user, decrypt(cfg.vcs.pwd), true)
       si.getServerConnection().getUserSession().setUserAgent("${this.class.name?.split('\\.')?.getAt(-1)}")
-      Date timeEnd = new Date()
-      log.info "Connected to vSphere (${vcs}) in ${TimeCategory.minus(timeEnd,timeStart)}"
+      log.info "Connected to vSphere: ${vcs} (${si.getAboutInfo().getApiVersion()}) in ${TimeCategory.minus(new Date(),ts_start)}"
     } catch (InvalidLogin e) {
       log.error "Invalid login vSphere: ${cfg.vcs.user}"
     } catch (RemoteException e) {
@@ -215,7 +219,7 @@ class VSphere2Metrics {
    * @param si ServiceInstance
    */
   void vSphereDisconnect(ServiceInstance si) {
-    Date timeStart = new Date()
+    Date ts_start = new Date()
 
     try {
       si.getServerConnection().logout()
@@ -224,8 +228,6 @@ class VSphere2Metrics {
       log.error "vSphereDisconnect: ${e?.message}"
       log.debug "vSphereDisconnect: ${getStackTrace(e)}"
     }
-    Date timeEnd = new Date()
-    log.info "Disconected from vSphere in ${TimeCategory.minus(timeEnd,timeStart)}"
   }
 
   /**
@@ -277,7 +279,7 @@ class VSphere2Metrics {
   }
 
   /**
-   * Get all the VM's know by the vSphere server
+   * Get all the VM's known by the vSphere server
    *
    * @param si ServiceInstance
    * @return InventoryNavigator
@@ -305,7 +307,7 @@ class VSphere2Metrics {
   }
 
   /**
-   * Get all the EXSi host know by the vSphere server
+   * Get all the EXSi hosts known by the vSphere server
    *
    * @param si ServiceInstance
    * @return InventoryNavigator
@@ -331,6 +333,55 @@ class VSphere2Metrics {
 
     return hosts
   }
+
+  /**
+   * Get Mappings of Hosts and there VMs
+   *
+   * @param si ServiceInstance
+   * @return hm HashMap
+  */
+  LinkedHashMap getHostMapping(ServiceInstance si) {
+    LinkedHashMap hm = [:]
+
+    try {
+      ManagedEntity[] ccr = new InventoryNavigator(si.getRootFolder()).searchManagedEntities("ClusterComputeResource")
+
+      List cluster_hosts = []
+      ccr.each { ClusterComputeResource cluster ->
+        cluster_hosts << cleanName(cluster.getName())
+        cluster.getHosts().each { HostSystem host ->
+          List host_vms = []
+          host.getVms().each { VirtualMachine vm ->
+            host_vms << cleanName(vm.getName())
+            hm[cleanName(vm.getName())] = ['host_mode':'clustered', 'host_type':'Guest', 'host_cluster':cleanName(cluster.getName()), 'host':cleanName(host.getName())]
+          }
+          hm[cleanName(host.getName())] = ['host_mode':'clustered', 'host_type':'Host', 'host_cluster':cleanName(cluster.getName()), 'vms':host_vms]
+        }
+
+        hm[cleanName(cluster.getName())] = ['host_mode':'clustered', 'host_type':'Cluster', 'host_cluster':cleanName(cluster.getName()), 'hosts':cluster_hosts]
+      }
+
+      ManagedEntity[] hosts = new InventoryNavigator(si.getRootFolder()).searchManagedEntities("HostSystem")
+      hosts.each { HostSystem host ->
+        if(!hm.containsKey(cleanName(host.getName()))) {
+          List host_vms = []
+          host.getVms().each { VirtualMachine vm ->
+            host_vms << cleanName(vm.getName())
+            hm[cleanName(vm.getName())] = ['host_mode':'standalone', 'host_type':'Guest', 'host_cluster':null, 'host':cleanName(host.getName())]
+          }
+          hm[cleanName(host.getName())] = ['host_mode':'standalone', 'host_type':'Host', 'host_cluster':null, 'vms':host_vms]
+        }
+      }
+    } catch (RemoteException e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "getMappingVMHost: ${e?.message}"
+      log.debug "getMappingVMHost: ${getStackTrace(e)}"
+    }
+
+    return hm
+  }
+
+
 
   /**
    * Get performace counters and returns a Data strunture containing all there info
@@ -378,7 +429,7 @@ class VSphere2Metrics {
       qSpec.setMaxSample(Math.round((startFromExecTime.toMilliseconds()/1000)/20).toInteger())
     } else {
       // Take into account the execution time and get the extra samples.
-      int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+      int execDelaySamples = Math.round((this.lastExecTime.toMilliseconds()/1000)/20).plus(3)
       qSpec.setMaxSample(maxSample + execDelaySamples)
     }
 
@@ -405,7 +456,7 @@ class VSphere2Metrics {
   //@TimedInterrupt(value=300L, unit=TimeUnit.SECONDS, applyToAllClasses=false, applyToAllMembers=false, checkOnMethodStart=false)
   PerfEntityMetricBase[] getPerfMetrics(PerformanceManager perfMgr,int maxSample,ManagedEntity vm) {
     GParsPool.withPool {
-      String vmName = vm?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+      String vmName = cleanName(vm?.getSummary()?.getConfig()?.getName())
       Long queryTimeout = cfg?.vcs?.perfquery_timeout?.toLong() ?: 60
 
       PerfProviderSummary pps = perfMgr.queryPerfProviderSummary(vm)
@@ -451,7 +502,7 @@ class VSphere2Metrics {
         def (rRate,tStamp) = pValue.getSampleInfoCSV().tokenize(',').collate( 2 ).transpose()
 
         // Convert incoming time to the Graphite TZ and to the epoch format
-        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs?.timezone,cfg?.destination?.timezone)).time.toString().toLong()?.div(1000)).toInteger() }
+        tStamp = tStamp.collect { ((convertTimeZone(it,cfg.vcs?.timezone,cfg?.destination?.timezone)).time.toString().toLong()?.div(1000)).toLong() }
 
         // Create data structure metricData[Metric][[Timestamp:Value]] for all the instances
         // [net.usage_average-kiloBytesPerSecond:[1339152760000:0, 1339152780000:1, 1339152800000:0, 1339152820000:0, 1339152840000:0, 1339152860000:0]
@@ -461,36 +512,44 @@ class VSphere2Metrics {
           String instName
 
           // Organize the instance name depending on the metrics
-          if (!instID) {
+
+          if (!(instID?.trim()) as boolean) {
             instName = 'avg'
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^datastore.*/) {
             if (hi['datastore'][instID]?.containsKey('type')) {
               instName = "${hi['datastore'][instID]['type']}.${hi['datastore'][instID]['name']}"
             } else {
-              log.warn "The datastore Instance: ${instID} has no type"
+              log.warn "The datastore CounterID: ${it.getId()?.getCounterId()} Instance: ${instID} has no type"
             }
 
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^disk.*/) {
             if (hi['disk'][instID]?.containsKey('type')) {
-              instName = "${hi['disk'][instID]['type']}.${hi['disk'][instID]['vendor']}-${instID[-4..-1]}".replaceAll(~/\s+/, '-')
+              instName = "${hi['disk'][instID]['type']}.${hi['disk'][instID]['name']}"
             } else {
-              log.warn "The disk Instance: ${instID} has no type"
+              log.warn "The disk CounterID: ${it.getId()?.getCounterId()} Instance: ${instID} has no type"
             }
 
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^storagePath.*/) {
             if (hi['storagePath'][instID]?.containsKey('pathname')) {
-              instName = "${hi['storagePath'][instID]['pathname']}"
+              instName = "${hi['storagePath'][instID]['name']}"
+
+            } else if (hi['storagePath'][instID.split('\\.').getAt(-1)]?.containsKey('pathname')) { // Workaround
+              instName = "${hi['storagePath'][instID.split('\\.').getAt(-1)]['name']}"
+
             } else {
-              log.debug "The storagePath Instance: ${instID} has no pathname"
+              instName = instID.replaceAll(~/[\s-\._]+/, '_').replaceAll(~/[:]/, '-')
+              log.trace "The storagePath CounterID: ${it.getId()?.getCounterId()} Instance: ${instID} has no pathname, using raw path"
             }
+
           } else if (perfMetrics[it.getId()?.getCounterId()]['Metric'] ==~ /^sys.*/) {
             if (instID == '/') {
               instName = 'root'
             } else {
               instName = instID.replaceAll(~/\//, '.').replaceAll(~/[_]/, '').trim()
             }
+
           } else {
-            instName = instID ?: 'FIXME'
+            instName = instID
           }
 
           // Put the metric instance in the middle (metric-type.instance.metric)
@@ -499,7 +558,8 @@ class VSphere2Metrics {
           if ((m = perfMetrics[it.getId().getCounterId()]['Metric'] =~ /(\w+).(.*)/)) {
             mpath = "${m[0][1]}.${instName}.${m[0][2]}".replaceAll(~/[:]/, '-')
           } else {
-            mpath = "FIXME.${perfMetrics[it.getId().getCounterId()]['Metric']}"
+            log.warn "Could not match metric-type and metric-name, using: ${perfMetrics[it.getId().getCounterId()]['Metric']}}"
+            mpath = "${perfMetrics[it.getId().getCounterId()]['Metric']}"
           }
 
           // Merge back the Time Stamps and Values:
@@ -521,7 +581,6 @@ class VSphere2Metrics {
   /**
    * Collect the metrics for all the VMs
    *
-   * @param si ServiceInstance
    * @param perfMgr A reference to the PerformanceManager used to make the method call
    * @param perfMetrics Performance Counters HashMap
    * @param hi Host information HashMap
@@ -529,42 +588,51 @@ class VSphere2Metrics {
    * @param vms The interval (samplingPeriod) in seconds for which performance statistics are queried
    * @param metricsData Referenca to the shared variable
    */
-  void getGuestMetrics(ServiceInstance si,PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
-    Date timeStart = new Date()
+  void getGuestMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,LinkedHashMap hm,int maxSample,ManagedEntity[] vms,LinkedHashMap metricsData) {
+    Date ts_start = new Date()
 
     vms.each { ManagedEntity vm ->
-      Date timeStartVM = new Date()
+      Date ts_start_vm = new Date()
       PerfEntityMetricBase[] pValues
-      String vmName,esxHost
+      String vmName
+      String esxHost
+      String esxType
+      String esxMode
+      String esxCluster
 
       try {
         // Can not collect metrics if VM is not Running
         if (vm?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
 
-        vmName = vm?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
-        esxHost = new HostSystem(si.getServerConnection(), vm.getRuntime().getHost()).getSummary().getConfig().getName()
-        esxHost = esxHost?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase() // Get only the hostname of the FQDN
+        vmName = cleanName(vm?.getSummary()?.getConfig()?.getName())
+        esxHost = hm[(vmName)]['host']
+        esxType = hm[(vmName)]['host_type']
+        esxMode = hm[(vmName)]['host_mode']
+        esxCluster = hm[(vmName)]['host_cluster']
 
         pValues = getPerfMetrics(perfMgr,maxSample,vm)
       } catch (TimeoutException e) {
         StackTraceUtils.deepSanitize(e)
-        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
+        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}${esxCluster ? ' - '+ esxCluster +')' : ''}) Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
 
       } catch (Exception e) {
         StackTraceUtils.deepSanitize(e)
-        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) ${e?.message}"
-        log.debug "Could not retrieve metrics for the VM: ${vmName} (${esxHost}) ${getStackTrace(e)}"
+        log.warn "Could not retrieve metrics for the VM: ${vmName} (${esxHost}${esxCluster ? ' - '+ esxCluster +')' : ''}) ${e?.message}"
+        log.debug "Could not retrieve metrics for the VM: ${vmName} (${esxHost}${esxCluster ? ' - '+ esxCluster +')' : ''}) ${getStackTrace(e)}"
       }
 
       if (vmName && esxHost && pValues) {
-        metricsData[(vmName)] = [type:'Guest', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
-        log.debug "Collected metrics for VM: ${vmName} (${esxHost}) in ${TimeCategory.minus(new Date(),timeStartVM)}"
+        metricsData[(vmName)] = ['host_type':esxType, 'host':esxHost, 'host_mode':esxMode, 'host_cluster':esxCluster, Metrics:getValues(pValues, perfMetrics, hi)]
+
+        this.selfMon["getGuestMetrics.${vmName}_ms"] = (new Date().time - ts_start_vm.time)
+        log.debug "Collected metrics for VM: ${vmName} (${esxHost}${esxCluster ? ' - '+ esxCluster +')' : ''}) in ${TimeCategory.minus(new Date(),ts_start_vm)}"
       } else {
-        log.debug "Ignoring metrics from the VM: ${vmName} (${esxHost})"
+        log.debug "Ignoring metrics from the VM: ${vmName} (${esxHost}${esxCluster ? ' - '+ esxCluster +')' : ''})"
       }
     }
 
-    log.info "Collected Guest metrics in ${TimeCategory.minus(new Date(),timeStart)}"
+    this.selfMon['getGuestMetrics.total_ms'] = (new Date().time - ts_start.time)
+    log.info "Collected Guest metrics in ${TimeCategory.minus(new Date(),ts_start)}"
   }
 
 
@@ -578,39 +646,47 @@ class VSphere2Metrics {
    * @param hosts The interval (samplingPeriod) in seconds for which performance statistics are queried
    * @param metricsData Referenca to the shared variable
    */
-  void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
-    Date timeStart = new Date()
+  void getHostsMetrics(PerformanceManager perfMgr,LinkedHashMap perfMetrics,LinkedHashMap hi,LinkedHashMap hm,int maxSample,ManagedEntity[] hosts,LinkedHashMap metricsData) {
+    Date ts_start = new Date()
 
     hosts.each { ManagedEntity host ->
-      Date timeStartHost = new Date()
+      Date ts_start_host = new Date()
       PerfEntityMetricBase[] pValues
       String esxHost
+      String esxType
+      String esxMode
+      String esxCluster
 
       try {
         // Can not collect metrics if Host is not Running
         if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
 
-        esxHost = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        esxHost = cleanName(host?.getSummary()?.getConfig()?.getName())
+        esxType = hm[(esxHost)]['host_type']
+        esxMode = hm[(esxHost)]['host_mode']
+        esxCluster = hm[(esxHost)]['host_cluster']
 
         pValues = getPerfMetrics(perfMgr,maxSample,host)
       } catch (TimeoutException e) {
         StackTraceUtils.deepSanitize(e)
-        log.warn "Could not retrieve metrics for the Host: ${esxHost} Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
+        log.warn "Could not retrieve metrics for the Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}Timeout exceeded: ${cfg.vcs.perfquery_timeout}:Seconds ${e?.message ?: ''}"
 
       } catch (Exception e) {
         StackTraceUtils.deepSanitize(e)
-        log.warn "Could not retrieve metrics for the Host: ${esxHost} ${e?.message}"
-        log.debug "Could not retrieve metrics for the Host: ${esxHost} ${getStackTrace(e)}"
+        log.warn "Could not retrieve metrics for the Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}${e?.message}"
+        log.debug "Could not retrieve metrics for the Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}${getStackTrace(e)}"
       }
 
       if (esxHost && pValues) {
-        metricsData[(esxHost)] = [type:'Host', Host:esxHost, Metrics:getValues(pValues, perfMetrics, hi)]
-        log.debug "Collected metrics for Host: ${esxHost} in ${TimeCategory.minus(new Date(),timeStartHost)}"
+        metricsData[(esxHost)] = ['host_type':esxType, 'host':esxHost, 'host_mode':esxMode, 'host_cluster':esxCluster, Metrics:getValues(pValues, perfMetrics, hi)]
+        this.selfMon["getHostsMetrics.${esxHost}_ms"] = (new Date().time - ts_start_host.time)
+        log.debug "Collected metrics for Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}in ${TimeCategory.minus(new Date(),ts_start_host)}"
       } else {
-        log.debug "Ignoring metrics for the Host: ${esxHost}"
+        log.debug "Ignoring metrics for the Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}"
       }
     }
-    log.info "Collected Host metrics in ${TimeCategory.minus(new Date(),timeStart)}"
+    this.selfMon["getHostsMetrics.total_ms"] = (new Date().time - ts_start.time)
+    log.info "Collected Host metrics in ${TimeCategory.minus(new Date(),ts_start)}"
   }
 
   /**
@@ -627,7 +703,7 @@ class VSphere2Metrics {
 
     hosts.each { ManagedEntity host ->
       try {
-        String hostName = host?.getSummary()?.getConfig()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        String hostName = cleanName(host?.getSummary()?.getConfig()?.getName())
         // Get datastore info
 
         HostRuntimeInfo hrti = host?.getRuntime()
@@ -646,20 +722,23 @@ class VSphere2Metrics {
           HostFileSystemVolume hfsv = it.getVolume() // HostFileSystemVolume
           if (hfsv.metaClass.respondsTo(hfsv, 'getUuid')) {
             dsInfo[hfsv.getUuid()] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
-          } else { log.trace "getHostInfo: Type:${hfsv.type} (${hfsv.getClass().getName()})" }
+          } else if (hfsv.type == "vsan") {
+            String vsan_id = it.mountInfo.path.split('/')?.getAt(-1).split(':')?.getAt(-1)
+            dsInfo[vsan_id] = [name:hfsv.getName().replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"),type:hfsv.getType().trim(), host:hostName]
+          } else { log.trace "getHostInfo: Type:${hfsv.type} (${hfsv.getClass().getName()}) Path:${it?.mountInfo?.path}" }
         }
 
         // Get disk info
         HostStorageDeviceInfo hsdi = hds?.getStorageDeviceInfo() // HostStorageDeviceInfo
         ScsiLun[] sls = hsdi?.getScsiLun()
-        sls.each { diskInfo[it.getCanonicalName()] = [type:it.getLunType().trim(), vendor:it.getVendor().trim(), uuid:it.getUuid(), host:hostName] }
+        sls.each { diskInfo[it.getCanonicalName()] = [name:it.getCanonicalName().replaceAll(~/[\s-\._]+/, '_').replaceAll(~/[:]/, '-'), type:it.getLunType().trim(), vendor:it.getVendor().trim().replaceAll(~/[\s-\.:_]+/, '_'), uuid:it.getUuid(), host:hostName] }
 
         // Get Multipath info
         HostMultipathInfo hmi = hsdi?.getMultipathInfo() // HostMultipathInfo
         hmi?.getLun().each { // HostMultipathInfoLogicalUnit
           HostMultipathInfoPath[] hmips = it.getPath() // HostMultipathInfoPath
           hmips.each { p ->
-            pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName()]
+            pathInfo[p.getName()] = [id:it.getId(), adapter:p.getAdapter(), lun:p.getLun(), name:p.getName().replaceAll(~/[\s-\.]/, '_').replaceAll(~/[:]/, '-')]
           }
         }
 
@@ -667,11 +746,7 @@ class VSphere2Metrics {
         pathInfo.each { p ->
           diskInfo.each { d ->
             if (p.value['id'] == d.value['uuid']) {
-              if (d.value['type']?.toLowerCase() == 'cdrom') {
-                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}"
-              } else {
-                pathInfo[p.key].pathname = "${p.value['adapter'].replaceAll('key-vim.host.', '')}-${d.value['type']}-${d.value['vendor']}-${p.key[-4..-1]}"
-              }
+              pathInfo[p.key].pathname = "${p.value['name']}_${d.value['name']}_${d.value['vendor']}"
             }
           }
         }
@@ -688,7 +763,250 @@ class VSphere2Metrics {
     return hostInfo
   }
 
+  /**
+   * Collects datastore, disk and storagePath information
+   *
+   * @param hosts The ManagedObject managed object whose performance statistics are being queried
+   * @return LinkedHashMap Host information HashMap
+   */
+  LinkedHashMap getGuestInfo(ManagedEntity[] guests) {
+    LinkedHashMap guestInfo = [:]
+    LinkedHashMap dsInfo = [:]
 
+    guests.each { ManagedEntity guest ->
+      try {
+        String guest_name = cleanName(guest.getName())
+
+        VirtualDevice[] vmDevs = guest.getPropertyByPath(['config.hardware.device'])
+        vmDevs.each { dev ->
+          if (dev instanceof VirtualDisk) {
+            if( dev.getBacking().backingObjectId ) {
+              String ds = dev.getBacking().fileName.replaceFirst(/\[(.*)\].*/, '$1')
+              String ds_id = dev.getBacking().backingObjectId
+              dsInfo[ds_id] = [name:ds.replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"), guest:guest_name]
+            }
+
+            if( dev.getBacking().getParent() ) {
+              String ds = dev.getBacking().getParent().fileName.replaceFirst(/\[(.*)\].*/, '$1')
+              String ds_id = dev.getBacking().getParent().backingObjectId
+              dsInfo[ds_id] = [name:ds.replaceAll(~/[()]/, '').replaceAll(~/[\s-\.]/, "-"), guest:guest_name]
+            }
+          }
+        }
+      } catch(Exception e) {
+        StackTraceUtils.deepSanitize(e)
+        log.error "getGuestInfo: ${e?.message}"
+        log.debug "getGuestInfo: ${getStackTrace(e)}"
+      }
+    }
+
+    guestInfo['datastore'] = dsInfo
+    return guestInfo
+  }
+
+  /**
+   * Collects Resource metrics
+   *
+   * @param si ServiceInstance
+   * @param hm Host Mapping HashMap
+   * @param metricsData Referenca to the shared variable
+   */
+  void getResourceMetrics(ServiceInstance si, LinkedHashMap hm, LinkedHashMap metricsData) {
+    Date ts_start = new Date()
+
+    try {
+      ManagedEntity[] rPools = new InventoryNavigator(si.getRootFolder()).searchManagedEntities("ResourcePool")
+
+      rPools.each { ResourcePool rPool ->
+        Date ts_start_rPool = new Date()
+        String node = cleanName(rPool.getOwner().getName())
+
+        if (hm[(node)]?.host_type =~ /Host|Cluster/) {
+          LinkedHashMap hostQuickStats = [:]
+          Long ts = (new Date().time/1000).toLong()
+          String esxType = hm[(node)]['host_type']
+          String esxMode = hm[(node)]['host_mode']
+          String esxCluster = hm[(node)]['host_cluster']
+
+          ResourcePoolQuickStats rPool_qStats = rPool.getSummary().getQuickStats()
+          rPool_qStats.properties?.each {
+            if (!(it.value instanceof Integer || it.value instanceof Long)) { return }
+            String mpath = "quickstats.${it.key}"
+            hostQuickStats[mpath] = [(ts):it.value]
+          }
+
+          if (metricsData.containsKey(node)) {
+            metricsData[(node)]['Metrics'] << hostQuickStats
+          } else {
+            metricsData[(node)] = ['host_type':esxType, 'host':node, 'host_mode':esxMode, 'host_cluster':esxCluster, Metrics:hostQuickStats]
+          }
+
+          this.selfMon["getResourceMetrics.${node}_ms"] = (new Date().time - ts_start_rPool.time)
+          log.debug "Collected ResourcePool metrics for Host: ${node} ${esxCluster ? '('+ esxCluster +') ' : ''}in ${TimeCategory.minus(new Date(),ts_start_rPool)}"
+        }
+      }
+
+      this.selfMon["getResourceMetrics.total_ms"] = (new Date().time - ts_start.time)
+      log.info "Collected ResourcePool metrics in ${TimeCategory.minus(new Date(),ts_start)}"
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "getResourceMetrics: ${e?.message}"
+      log.debug "getResourceMetrics: ${getStackTrace(e)}"
+    }
+  }
+
+
+  /**
+   * Collects VSAN Statistics
+   *
+   * @param hi Host information HashMap
+   * @param hm Host Mapping HashMap
+   * @param gi Guest information HashMap
+   * @param hosts The ManagedObject managed object whose performance statistics are being queried
+   * @param metricsData Referenca to the shared variable
+   */
+  void getVsanMetrics(LinkedHashMap hi, LinkedHashMap hm, LinkedHashMap gi, ManagedEntity[] hosts,LinkedHashMap metricsData) {
+    Date ts_start = new Date()
+
+    hosts.each { ManagedEntity host ->
+      if (host?.getSummary()?.getRuntime()?.getPowerState()?.toString() != 'poweredOn') { return }
+
+      try {
+        Date ts_start_vsan = new Date()
+        LinkedHashMap hostVsanMetrics  = [:]
+        String esxHost = cleanName(host?.getSummary()?.getConfig()?.getName())
+        String esxType = hm[(esxHost)]['host_type']
+        String esxMode = hm[(esxHost)]['host_mode']
+        String esxCluster = hm[(esxHost)]['host_cluster']
+
+        HostVsanInternalSystem vsanInt = host.getHostVsanInternalSystem()
+        String jsonTxt_vsan_stats = vsanInt.queryVsanStatistics(['dom', 'dom-objects', 'lsom', 'disks'] as String[])
+        LazyMap json_vsan_stats = new JsonSlurper().parseText(jsonTxt_vsan_stats)
+
+        String jsonTxt_vsan_stats_disks = vsanInt.queryPhysicalVsanDisks()
+        LazyMap json_vsan_stats_disks = [:]
+        try {
+          json_vsan_stats_disks = new JsonSlurper().parseText(jsonTxt_vsan_stats_disks) // Operation not allowed because the VMKernel is shutting down
+        } catch(Exception e) {
+          json_vsan_stats_disks = [:]
+        }
+
+        json_vsan_stats.get('dom.compmgr.schedStats').each { k, v ->
+          Long ts = json_vsan_stats.get('dom.compmgr.schedStats-taken').toLong()
+          String mpath = "vsan.compmgr.schedStats.${k}"
+          hostVsanMetrics[mpath] = [(ts):v]
+        }
+        json_vsan_stats.get('dom.compmgr.stats').each { k, v ->
+          Long ts = json_vsan_stats.get('dom.compmgr.stats-taken').toLong()
+          String mpath = "vsan.compmgr.stats.${k}"
+          hostVsanMetrics[mpath] = [(ts):v]
+        }
+        json_vsan_stats.get('dom.client.stats').each { k, v ->
+          Long ts = json_vsan_stats.get('dom.client.stats-taken').toLong()
+          String mpath = "vsan.client.stats.${k}"
+          hostVsanMetrics[mpath] = [(ts):v]
+        }
+        json_vsan_stats.get('dom.owner.stats').each { k, v ->
+          Long ts = json_vsan_stats.get('dom.owner.stats-taken').toLong()
+          String mpath = "vsan.owner.stats.${k}"
+          hostVsanMetrics[mpath] = [(ts):v]
+        }
+
+        json_vsan_stats.get('dom.owners.stats').each { String diskID, LazyMap metrics ->
+          Long ts = json_vsan_stats.get('dom.owners.stats-taken').toLong()
+          HashMap disk = gi['datastore'][diskID]
+          if (disk) {
+            metrics.each { k,v ->
+              String mpath = "vsan.owners.stats.${disk.name}.${disk.guest}.${k}"
+              hostVsanMetrics[mpath] = [(ts):v]
+            }
+          } else {
+            //println "No Guest VirtualDisks mapping found for ${diskID}"
+          }
+        }
+
+        json_vsan_stats.get('lsom.disks').each { String diskID, LazyMap metrics ->
+          Long ts = json_vsan_stats.get('lsom.disks-taken').toLong()
+
+          if (metrics.info.ssd != 'NA') {
+            String disk_name = json_vsan_stats_disks instanceof LazyMap ? json_vsan_stats_disks[diskID]?.devName?.getAt(0..-3)?.replaceAll(~/[\s-\._]+/, '_')?.replaceAll(~/[:]/, '-') : diskID
+            metrics.each {
+              if (it.value instanceof LazyMap) {
+                it.value.each { it2 ->
+                  if (it2.value instanceof LazyMap) {
+                    it2.value.each { it3 ->
+                      if (!(it3.value instanceof LazyMap || it3.value instanceof String)) {
+                        String mpath = "vsan.lsom.disks.${disk_name}.${it.key}.${it2.key}.${it3.key}"
+                        hostVsanMetrics[mpath] = [(ts):it3.value]
+                      }
+                    }
+                  } else {
+                    if (!(it2.value instanceof LazyMap || it2.value instanceof String)) {
+                      String mpath = "vsan.lsom.disks.${disk_name}.${it.key}.${it2.key}"
+                      hostVsanMetrics[mpath] = [(ts):it2.value]
+                    }
+                  }
+                }
+              }
+            }
+          } else if (metrics.info.ssd == 'NA') {
+            String disk_name = json_vsan_stats_disks instanceof LazyMap ? json_vsan_stats_disks[diskID]?.devName?.getAt(0..-3)?.replaceAll(~/[\s-\._]+/, '_')?.replaceAll(~/[:]/, '-') : diskID
+            metrics.each {
+              if (it.value instanceof LazyMap) {
+                it.value.each { it2 ->
+                  if (it2.value instanceof LazyMap) {
+                    it2.value.each { it3 ->
+                      if (!(it3.value instanceof LazyMap || it3.value instanceof String)) {
+                        String mpath = "vsan.lsom.ssd.${disk_name}.${it.key}.${it2.key}.${it3.key}"
+                        hostVsanMetrics[mpath] = [(ts):it3.value]
+                      }
+                    }
+                  } else {
+                    if (!(it2.value instanceof LazyMap || it2.value instanceof String)) {
+                      String mpath = "vsan.lsom.ssd.${disk_name}.${it.key}.${it2.key}"
+                      hostVsanMetrics[mpath] = [(ts):it2.value]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        json_vsan_stats.get('disks.stats').each { String diskID, LazyMap metrics ->
+          Long ts = json_vsan_stats.get('disks-taken').toLong()
+          String disk_name = diskID.replaceAll(~/[\s-\._]+/, '_').replaceAll(~/[:]/, '-')
+
+          metrics.each {
+            if (it.value instanceof LazyMap) {
+              it.value.each { it2 ->
+                String mpath = "vsan.disks.stats.${disk_name}.${it.key}.${it2.key}"
+                hostVsanMetrics[mpath] = [(ts):it2.value]
+              }
+            } else {
+              String mpath = "vsan.disks.stats.${disk_name}.${it.key}"
+              hostVsanMetrics[mpath] = [(ts):it.value]
+            }
+          }
+        }
+
+        if(metricsData.containsKey(esxHost)) {
+          metricsData[(esxHost)]['Metrics'] << hostVsanMetrics
+        } else {
+          metricsData[(esxHost)] = ['host_type':esxType, 'host':esxHost, 'host_mode':esxMode, 'host_cluster':esxCluster, Metrics:hostVsanMetrics]
+        }
+        this.selfMon["getVsanMetrics.${esxHost}_ms"] = (new Date().time - ts_start_vsan.time)
+        log.debug "Collected VSAN metrics for Host: ${esxHost} ${esxCluster ? '('+ esxCluster +') ' : ''}in ${TimeCategory.minus(new Date(),ts_start_vsan)}"
+
+      } catch (Exception e) {
+        StackTraceUtils.deepSanitize(e)
+        log.error "getVsanMetrics: ${e?.message}"
+        log.debug "getVsanMetrics: ${getStackTrace(e)}"
+      }
+    }
+    this.selfMon["getVsanMetrics.total_ms"] = (new Date().time - ts_start.time)
+    log.info "Collected VSAN metrics in ${TimeCategory.minus(new Date(),ts_start)}"
+  }
 
   /**
    * Build Metrics to be consumed by Graphite
@@ -697,7 +1015,7 @@ class VSphere2Metrics {
    * @return ArrayList of Metrics
    */
   ArrayList buildMetrics(LinkedHashMap data) {
-    Date timeStart = new Date()
+    Date ts_start = new Date()
     ArrayList metricList = []
     log.debug "Bulding Metrics"
 
@@ -706,17 +1024,27 @@ class VSphere2Metrics {
         node.each { hash ->
           hash.value['Metrics'].each { metric ->
             metric.value.each { ts ->
-              log.trace "Type:${hash.value['type']} / Host:${hash.value['Host']} / VM:${node.key} / Metric:${metric.key} / Val:${ts.value} / TS:${ts.key}"
+              log.trace "Type:${hash.value['host_type']} / HostCluster:${hash.value['host_cluster']} / HostMode:${hash.value['host_mode']} / Host:${hash.value['host']} / VM:${node.key} / Metric:${metric.key} / Val:${ts.value} / TS:${ts.key}"
 
               String mpath
-              if (hash.value['type'] == 'Host') {
-                mpath = "${hash.value['Host']}.${hash.value['type']}.${metric.key}"
+              if (hash.value['host_mode'] == 'clustered') {
+                if (hash.value['host_type'] == 'Cluster') {
+                  mpath = "${hash.value['host_mode']}.${hash.value['host_cluster']}.${hash.value['host_type']}.${metric.key}"
+                } else if (hash.value['host_type'] == 'Host') {
+                  mpath = "${hash.value['host_mode']}.${hash.value['host_cluster']}.${hash.value['host_type']}.${hash.value['host']}.${metric.key}"
+                } else {
+                  mpath = "${hash.value['host_mode']}.${hash.value['host_cluster']}.${hash.value['host_type']}.${node.key}.${metric.key}"
+                }
               } else {
-                mpath = "${hash.value['Host']}.${hash.value['type']}.${node.key}.${metric.key}"
+                if (hash.value['host_type'] == 'Host') {
+                  mpath = "${hash.value['host_mode']}.${hash.value['host']}.${hash.value['host_type']}.${metric.key}"
+                } else {
+                  mpath = "${hash.value['host_mode']}.${hash.value['host']}.${hash.value['host_type']}.${node.key}.${metric.key}"
+                }
               }
 
               BigDecimal mvalue = (ts.value.toString().isEmpty()) ? 0 : ts.value.toBigDecimal()
-              int mtimes = ts.key
+              Long mtimes = ts.key
 
               // Only send metrics if they are different than 0
               if (mvalue) {
@@ -726,9 +1054,14 @@ class VSphere2Metrics {
           }
           hash.value['Events'].each { ts ->
             ts.value.each { event ->
-              log.trace "Type:${hash.value['type']} / Host:${hash.value['Host']} / VM:${node.key} / Event:${event.key} / Val:${event.value} / TS:${ts.key}"
-              String mpath = "${hash.value['Host']}.${hash.value['type']}.${event.key}"
+              log.trace "Type:${hash.value['host_type']} / HostCluster:${hash.value['host_cluster']} / HostMode:${hash.value['host_mode']} / Host:${hash.value['host']} / VM:${node.key} / Event:${event.key} / Val:${event.value} / TS:${ts.key}"
+              String mpath
               BigDecimal mvalue = (event?.value?.toString()?.isEmpty()) ? 0 : event?.value?.toBigDecimal()
+              if (hash.value['host_mode'] == 'clustered') {
+                mpath = "${hash.value['host_mode']}.${hash.value['host_cluster']}.${hash.value['host_type']}.${hash.value['host']}.${event.key}"
+              } else {
+                mpath = "${hash.value['host_mode']}.${hash.value['host']}.${hash.value['host_type']}.${event.key}"
+              }
 
               metricList << "${mpath} ${mvalue} ${ts.key}\n"
             }
@@ -741,8 +1074,8 @@ class VSphere2Metrics {
       log.debug "Building metrics: ${getStackTrace(e)}"
       return metricList
     }
-    Date timeEnd = new Date()
-    log.info "Finished Building ${metricList?.size()} Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+    this.selfMon["buildMetrics.total_ms"] = (new Date().time - ts_start.time)
+    log.info "Finished Building ${metricList?.size()} Metrics in ${TimeCategory.minus(new Date(),ts_start)}"
 
     return metricList
   }
@@ -755,7 +1088,7 @@ class VSphere2Metrics {
    * @return HashMap of Metrics
    */
   HashMap buildMetricsInfluxDB(LinkedHashMap data) {
-    Date timeStart = new Date()
+    Date ts_start = new Date()
     HashMap metricList = [:]
     Closure strToFloat = { str -> String v = (str?.toFloat() < 0.1) ? str?.toBigDecimal().toPlainString() : str?.toBigDecimal().toPlainString().toBigDecimal() * 1.0; if (v == '0') { 0.0 } else { v } }
 
@@ -773,13 +1106,15 @@ class VSphere2Metrics {
             HashMap mTags = [:]
 
             try {
-              String type = hash?.value['type'] ?: ''
-              String host = hash?.value['Host'] ?: ''
 
-              mTags << ['type': type, 'server': server ]
+              mTags << ['host_type': hash?.value['host_type'], 'host_mode': hash.value['host_mode'], 'server': server ]
 
-              if (host && host != server) {
-                mTags << ['host': host]
+              if (hash.value['host_cluster']) {
+                mTags << ['host_cluster': hash.value['host_cluster']]
+              }
+
+              if (hash?.value['host'] && hash?.value['host'] != server) {
+                mTags << ['host': hash?.value['host']]
               }
 
               switch ( metric.key ) {
@@ -809,14 +1144,17 @@ class VSphere2Metrics {
                     mInstanceType = null
                   }
 
-                  if ( mInstanceType ) {
+                  if (mInstanceType) {
                     mTags << ['instance_type': mInstanceType]
                   }
-                  if ( mInstance ) {
+                  if (mInstance) {
                     mTags << ['instance': mInstance.replaceAll(~/\s+/, '-')]
                   }
+                case ~/^(quickstats)\..*/:
+                  seriesName = "${metric.key.replaceAll(~/[\.]/, '_')}"
+
                 break
-                case ~/^(sys)\..*/:
+                case ~/^(sys|vsan)\..*/:
                   // TODO: Implement
                   return
                 break
@@ -833,7 +1171,7 @@ class VSphere2Metrics {
                   if (!seriesName || !ts?.value) { return }
                   // Ugly Workaround that removes the scientific notation and force the number to be a Float (https://github.com/influxdb/influxdb/issues/3479)
                   String val = strToFloat(ts?.value)
-                  "${seriesName},${mTags.sort().collect{ it }.join(',')} value=${val} ${ts?.key?.toInteger()}"
+                  "${seriesName},${mTags.sort().collect{ it }.join(',')} value=${val} ${ts?.key?.toLong()}"
                 }.findAll()
               )
 
@@ -855,8 +1193,8 @@ class VSphere2Metrics {
       return metricList
     }
 
-    Date timeEnd = new Date()
-    log.info "Finished Building InfluxDB Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+    this.selfMon["buildMetricsInfluxDB.total_ms"] = (new Date().time - ts_start.time)
+    log.info "Finished Building InfluxDB Metrics in ${TimeCategory.minus(new Date(),ts_start)}"
 
     return metricList
   }
@@ -874,9 +1212,9 @@ class VSphere2Metrics {
    * @param maxSample The maximum number of samples to be returned from server
    * @param metricsData Referenca to the shared variable
    */
-  void getEvants(ServiceInstance si,int maxSample,LinkedHashMap metricsData) {
+  void getEvants(ServiceInstance si,LinkedHashMap hm,int maxSample,LinkedHashMap metricsData) {
     try {
-      Date timeStart = new Date()
+      Date ts_start = new Date()
       // Create a filter spec for querying events
       EventFilterSpec efs = new EventFilterSpec()
 
@@ -894,14 +1232,14 @@ class VSphere2Metrics {
       eFilter.setRecursion(EventFilterSpecRecursionOption.children)
 
       Date vcDate = si?.currentTime()?.time
-      int eventTime
+      Integer eventTime
 
       // When using the parameter 'sf'
       if (startFromExecTime.toMilliseconds()) {
-        eventTime = (startFromExecTime.toMilliseconds()/1000).toInteger()
+        eventTime = (startFromExecTime.toMilliseconds()/1000).toLong()
       } else {
         // Take into account the execution time and get the extra samples.
-        int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+        int execDelaySamples = Math.round((this.lastExecTime.toMilliseconds()/1000)/20).plus(3)
         eventTime = ((maxSample + execDelaySamples) * 20)
       }
 
@@ -918,22 +1256,29 @@ class VSphere2Metrics {
       Event[] events = em.queryEvents(efs)
 
       MapWithDefault hostEvents = [:].withDefault { [:].withDefault { [:].withDefault { 0.toBigDecimal() } } }
+      HashMap hostType = [:]
 
       // Sum events generated in the same second
       events.each { e ->
-        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toInteger() ?: 0
-        String esxHost = e?.getHost()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        Long ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toLong() ?: 0
+
+        String esxHost = cleanName(e?.getHost()?.getName())
+        String esxCluster = hm[(esxHost)]['host_cluster']
+        String esxMode = hm[(esxHost)]['host_mode']
+
         String eventType = e?.getClass()?.getName()?.split('\\.')?.getAt(-1)
 
         if (esxHost && ts && eventType) {
+          hostType[esxHost] = ['host_mode':esxMode, 'host_cluster':esxCluster]
           hostEvents[esxHost][ts][eventType]++
         }
       }
       // Map events to metricsData
       hostEvents.each { String esxHost, MapWithDefault evts ->
-        metricsData[(esxHost)] = [type:'Events', Host:esxHost, Events:evts]
+        metricsData[(esxHost)] = ['host_type':'Events', 'host':esxHost, 'host_mode':hostType[esxHost]['host_mode'], 'host_cluster':hostType[esxHost]['host_cluster'], Events:evts]
       }
-      log.info "Found ${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),timeStart)}"
+      this.selfMon["getEvants.total_ms"] = (new Date().time - ts_start.time)
+      log.info "Found ${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),ts_start)}"
 
     } catch(Exception e) {
       StackTraceUtils.deepSanitize(e)
@@ -951,7 +1296,7 @@ class VSphere2Metrics {
    */
   ArrayList getEvantsInfluxDB(ServiceInstance si,int maxSample) {
     try {
-      Date timeStart = new Date()
+      Date ts_start = new Date()
       String vcHost = si.getServerConnection()?.getUrl()?.getHost()?.split('\\.')?.getAt(0)?.toLowerCase()
 
       // Create a filter spec for querying events
@@ -963,14 +1308,14 @@ class VSphere2Metrics {
       eFilter.setRecursion(EventFilterSpecRecursionOption.children)
 
       Date vcDate = si?.currentTime()?.time
-      int eventTime
+      Integer eventTime
 
       // When using the parameter 'sf'
       if (startFromExecTime.toMilliseconds()) {
-        eventTime = (startFromExecTime.toMilliseconds()/1000).toInteger()
+        eventTime = (startFromExecTime.toMilliseconds()/1000).toLong()
       } else {
         // Take into account the execution time and get the extra samples.
-        int execDelaySamples = Math.round((lastExecTime.toMilliseconds()/1000)/20).plus(3)
+        int execDelaySamples = Math.round((this.lastExecTime.toMilliseconds()/1000)/20).plus(3)
         eventTime = ((maxSample + execDelaySamples) * 20)
       }
 
@@ -992,21 +1337,21 @@ class VSphere2Metrics {
         // TODO: Add parameterization
         if (e?.getClass()?.getSuperclass()?.getName()?.split('\\.')?.getAt(-1) ==~ /^(Event|AlarmEvent|AuthorizationEvent|CustomFieldEvent|ScheduledTaskEvent|SessionEvent|TaskEvent|TemplateUpgradeEvent|UpgradeEvent).*/) { return }
 
-        int ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toInteger() ?: 0
+        Long ts = (e?.getCreatedTime()?.getTime()?.time?.toLong()?.div(1000))?.toLong() ?: 0
         String eventClass = e?.getClass()?.getSuperclass()?.getName()?.split('\\.')?.getAt(-1)
         String eventType = e?.getClass()?.getName()?.split('\\.')?.getAt(-1)
         String eventDc = e?.getDatacenter()?.getName()?.replaceAll(~/([\s,])/, "\\\\\$1")
         String eventCr = e?.getComputeResource()?.getName()?.replaceAll(~/([\s,])/, "\\\\\$1")
 
-        String esxHost = e?.getHost()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
-        String esxGuest = e?.getVm()?.getName()?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()
+        String esxHost = cleanName(e?.getHost()?.getName())
+        String esxGuest = cleanName(e?.getVm()?.getName())
 
         mTags << ['class': eventClass, 'type': eventType, 'vsphere': vcHost]
 
         if (eventDc) { mTags << ['datacenter': eventDc] }
         if (eventCr) {
           if (e?.getHost()?.getName()?.toLowerCase() == e?.getComputeResource()?.getName()?.toLowerCase()) {
-            mTags << ['computeresource': eventCr?.split('\\.')?.getAt(0)?.replaceAll(~/[\s-\.]/, "-")?.toLowerCase()]
+            mTags << ['computeresource': cleanName(eventCr)]
           } else {
             mTags << ['computeresource': eventCr]
           }
@@ -1020,7 +1365,8 @@ class VSphere2Metrics {
         mEvents << "events,${mTags.sort().collect{ it }.join(',')} value=1i ${ts ?: ''}"
       }
 
-      log.info "Found ${mEvents?.size() ?: 0}/${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),timeStart)}"
+      this.selfMon["getEvantsInfluxDB.total_ms"] = (new Date().time - ts_start.time)
+      log.info "Found ${mEvents?.size() ?: 0}/${events?.size() ?: 0} Events in ${TimeCategory.minus(new Date(),ts_start)}"
       return mEvents
 
     } catch(Exception e) {
@@ -1072,7 +1418,7 @@ class VSphere2Metrics {
    *
    */
   void dumpCounters() {
-    Date timeStart = new Date()
+    Date ts_start = new Date()
     log.info "Getting available Counters in vSphere"
 
     ArrayList vcs = cfg?.vcs?.urls
@@ -1094,8 +1440,7 @@ class VSphere2Metrics {
       }
     }
 
-    Date timeEnd = new Date()
-    log.info "Finished Collecting vSphere Counters in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Finished Collecting vSphere Counters in ${TimeCategory.minus(new Date(),ts_start)}"
   }
 
   /**
@@ -1103,8 +1448,8 @@ class VSphere2Metrics {
    *
    * 3 Samples + startfrom
    */
-  void dumpMetrics() {
-    Date timeStart = new Date()
+  void dumpMetrics(String printType) {
+    Date ts_start = new Date()
     log.info "Start Collecting vSphere Metrics"
 
     ArrayList vcs = cfg?.vcs?.urls
@@ -1119,34 +1464,51 @@ class VSphere2Metrics {
       ManagedEntity[] hosts = getHosts(si) // Get Hosts
       LinkedHashMap hi = getHostInfo(hosts) // Get Host info
       ManagedEntity[] guests = getVMs(si) // Get VMs
+      LinkedHashMap gi = getGuestInfo(guests) // Get Guest info
+      LinkedHashMap hm = getHostMapping(si) // Get Host vs Guest Mappings
 
       // Collect Host and Guest performance metrics
       LinkedHashMap metricsData = [:]
-      getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
-      getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
-      getEvants(si,cfg.vcs.perf_max_samples,metricsData)
+      getHostsMetrics(perfMgr,perfMetrics,hi,hm,cfg.vcs.perf_max_samples,hosts,metricsData)
+      getGuestMetrics(perfMgr,perfMetrics,hi,hm,cfg.vcs.perf_max_samples,guests,metricsData)
+      getEvants(si,hm,cfg.vcs.perf_max_samples,metricsData)
+      getResourceMetrics(si,hm,metricsData)
+      getVsanMetrics(hi,hm,gi,hosts,metricsData)
 
       vSphereDisconnect(si)
 
       // Print metrics
       println "vSphere: ${vc}"
-      metricsData.each { n ->
-        println "${n.key}:"
-        n.value.each {
-          if (it.key == 'Metrics') {
-            println "\t${it.key}:"
-            it.value.each {
-              println "\t\t${it.key}: ${it.value}"
-            }
-          } else {
-            println "\t${it.key}: ${it.value}"
-          }
-        }
+
+      switch (printType) {
+          case ~/^(?i)Prettyprint/:
+              metricsData.each { n ->
+                println "${n.key}:"
+                n.value.each {
+                  if (it.key == 'Metrics') {
+                    println "\t${it.key}:"
+                    it.value.each {
+                      println "\t\t${it.key}: ${it.value}"
+                    }
+                  } else {
+                    println "\t${it.key}: ${it.value}"
+                  }
+                }
+              }
+              break
+          case ~/^(?i)Graphite/:
+              println buildMetrics(metricsData)
+              break
+          case ~/^(?i)InfluxDB/:
+              println buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
+              break
+          default:
+              println "You did not specify the print type: Prettyprint, Graphite or InfluxDB"
+              break
       }
     }
 
-    Date timeEnd = new Date()
-    log.info "Finished Collecting vSphere Metrics in ${TimeCategory.minus(timeEnd,timeStart)}"
+    log.info "Finished Collecting vSphere Metrics in ${TimeCategory.minus(new Date(),ts_start)}"
   }
 
 
@@ -1157,14 +1519,14 @@ class VSphere2Metrics {
    *
    * @param vcs URL list of the vSphere servers
    */
-  void collectVMMetrics(ArrayList vcs) {
-    Date timeStart = new Date()
+  void collectMetrics(ArrayList vcs) {
+    Date ts_start = new Date()
 
     GParsPool.withPool(cfg?.vcs?.urls.size()) {
-      log.info "Start Collecting vSphere Metrics in parallel using PoolSize: ${cfg?.vcs?.urls.size()}/${PoolUtils.retrieveDefaultPoolSize()} (Current/Max) / Last execution time: ${lastExecTime}"
+      log.info "Start Collecting vSphere Metrics in parallel using PoolSize: ${cfg?.vcs?.urls.size()}/${PoolUtils.retrieveDefaultPoolSize()} (Current/Max) / Last execution time: ${this.lastExecTime}"
 
       vcs.eachParallel { vc ->
-        String vcHost = vc?.replaceAll(~/http.?:\/\/(.*)\/.*/, '$1')?.split('\\.')?.getAt(0)?.toLowerCase()
+        String vcHost = cleanName(vc?.replaceAll(~/http.?:\/\/(.*)\/.*/, '$1'))
         Thread.currentThread().name = vcHost
 
         ServiceInstance si = vSphereConnect(vc)
@@ -1178,37 +1540,46 @@ class VSphere2Metrics {
           ManagedEntity[] hosts = getHosts(si) // Get Hosts
           LinkedHashMap hi = getHostInfo(hosts) // Get Host info
           ManagedEntity[] guests = getVMs(si) // Get VMs
+          LinkedHashMap gi = getGuestInfo(guests) // Get Guest info
+          LinkedHashMap hm = getHostMapping(si) // Get Host vs Guest Mappings
 
           // Collect Host and Guest performance metrics
           LinkedHashMap metricsData = [:]
-          getHostsMetrics(perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,hosts,metricsData)
-          getGuestMetrics(si,perfMgr,perfMetrics,hi,cfg.vcs.perf_max_samples,guests,metricsData)
+          getHostsMetrics(perfMgr,perfMetrics,hi,hm,cfg.vcs.perf_max_samples,hosts,metricsData)
+          getGuestMetrics(perfMgr,perfMetrics,hi,hm,cfg.vcs.perf_max_samples,guests,metricsData)
+          getResourceMetrics(si,hm,metricsData)
+          getVsanMetrics(hi,hm,gi,hosts,metricsData)
+          getEvants(si,hm,cfg.vcs.perf_max_samples,metricsData)
 
 
           // Send metrics
           if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
-            getEvants(si,cfg.vcs.perf_max_samples,metricsData)
+            ArrayList metricsDataGraphite = buildMetrics(metricsData)
+            this.selfMon['collectMetrics.total_cnt'] = metricsDataGraphite?.size()
 
             if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
-              mc.send2GraphitePickle(buildMetrics(metricsData))
+              mc.send2GraphitePickle(metricsDataGraphite)
             } else {
-              mc.send2Graphite(buildMetrics(metricsData))
+              mc.send2Graphite(metricsDataGraphite)
             }
 
           } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
             ArrayList eventsDataInflux = getEvantsInfluxDB(si,cfg.vcs.perf_max_samples)
             ArrayList metricsDataInflux = buildMetricsInfluxDB(metricsData)?.values()?.collect { it.join('\n') }
             metricsDataInflux.addAll(eventsDataInflux)
+            this.selfMon['collectMetrics.total_cnt'] = metricsDataInflux?.size()
 
             HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
             mc.send2InfluxDB(metricsDataInflux, parms)
           } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
+            ArrayList metricsDataGraphite = buildMetrics(metricsData)
+            this.selfMon['collectMetrics.total_cnt'] = metricsDataGraphite?.size()
+
             // Graphite
-            getEvants(si,cfg.vcs.perf_max_samples,metricsData)
             if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
-              mcG.send2GraphitePickle(buildMetrics(metricsData))
+              mcG.send2GraphitePickle(metricsDataGraphite)
             } else {
-              mcG.send2Graphite(buildMetrics(metricsData))
+              mcG.send2Graphite(metricsDataGraphite)
             }
 
             // InfluxDB
@@ -1230,10 +1601,84 @@ class VSphere2Metrics {
       }
     }
 
-    Date timeEnd = new Date()
-    lastExecTime = TimeCategory.minus(timeEnd,timeStart)
-    log.info "Finished Collecting and Sending vSphere Metrics in ${lastExecTime}"
+    this.selfMon['collectMetrics.total_ms'] = (new Date().time - ts_start.time)
+    this.lastExecTime = TimeCategory.minus(new Date(),ts_start)
+    log.info "Finished Collecting and Sending vSphere Metrics in ${this.lastExecTime}"
   }
+
+  void sendSelfMonMetrics() {
+    log.info "Sending SelfMon Metrics"
+
+     // Send metrics
+    if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
+      if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+        mc.send2GraphitePickle(buildSelfMetrics(this.selfMon))
+      } else {
+        mc.send2Graphite(buildSelfMetrics(this.selfMon))
+      }
+    } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
+      HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
+      mc.send2InfluxDB(buildSelfMetricsInfluxDB(this.selfMon), parms)
+
+    } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
+      HashMap parms = ['db':cfg?.influxdb.database, 'precision':'s']
+      mc.send2InfluxDB(buildSelfMetricsInfluxDB(this.selfMon), parms)
+
+      // Graphite
+      if (cfg?.graphite?.mode?.toLowerCase() == 'pickle') {
+        mc.send2GraphitePickle(buildSelfMetrics(this.selfMon))
+      } else {
+        mc.send2Graphite(buildSelfMetrics(this.selfMon))
+      }
+    }
+  }
+
+  ArrayList buildSelfMetrics(LinkedHashMap data) {
+    ArrayList metricList = []
+
+    try {
+      log.debug "Bulding SelfMon Metrics Graphite"
+
+      Long ts = (new Date().time/1000).toLong()
+      data.each { String k, Long v ->
+        String mpath = "vsphere2metrics.${k.toLowerCase()}"
+        metricList << "${mpath} ${v} ${ts}\n"
+      }
+
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "Building SelfMon metrics: ${e?.message}"
+      log.debug "Building SelfMon metrics: ${getStackTrace(e)}"
+    }
+
+    return metricList
+  }
+
+  ArrayList buildSelfMetricsInfluxDB(LinkedHashMap data) {
+    ArrayList metricList = []
+
+    try {
+      log.debug "Bulding SelfMon Metrics InfluxDB"
+      Closure strToFloat = { str -> String v = (str?.toFloat() < 0.1) ? str?.toBigDecimal().toPlainString() : str?.toBigDecimal().toPlainString().toBigDecimal() * 1.0; if (v == '0') { 0.0 } else { v } }
+
+      Long ts = (new Date().time/1000).toLong()
+      data.each { String k, Long v ->
+        String seriesName = "vsphere2metrics_${k.toLowerCase()?.split('\\.')?.getAt(0)}"
+        String instance = k.toLowerCase()?.split('\\.')?.getAt(-1).replaceAll(~/_(ms|cnt)/, '')
+        String instance_type = k.toLowerCase()?.split('\\.')?.getAt(-1)?.split('_')?.getAt(1)
+
+        String val = strToFloat(v)
+        metricList << "${seriesName},instance=${instance},instance_type=${instance_type} value=${val} ${ts}\n"
+      }
+    } catch(Exception e) {
+      StackTraceUtils.deepSanitize(e)
+      log.error "Building SelfMon metrics: ${e?.message}"
+      log.debug "Building SelfMon metrics: ${getStackTrace(e)}"
+    }
+
+    return metricList
+  }
+
 
   /**
    * Run as daemon the Collecting processes
@@ -1243,7 +1688,8 @@ class VSphere2Metrics {
     try {
       while(true) {
         // Collect VM Metrics
-        collectVMMetrics(cfg?.vcs?.urls)
+        collectMetrics(cfg?.vcs?.urls)
+        sendSelfMonMetrics()
 
         System.gc()
 
@@ -1269,7 +1715,7 @@ class VSphere2Metrics {
     CliBuilder cli = new CliBuilder(usage: '[-dc] [-dm] [-sf <(1..60) Minutes>] [No paramaters Run as Daemon]')
     cli.h(longOpt:'help', 'Usage information')
     cli.dc(longOpt:'dumpcounters', 'Dump available counters, OPTIONAL', required:false)
-    cli.dm(longOpt:'dumpmetrics', 'Dump Metrics, OPTIONAL', required:false)
+    cli.dm(longOpt:'dumpmetrics', 'Dump Metrics Prettyprint, Graphite, InfluxDB, OPTIONAL', required:false, type:String, args:1)
     cli.pwd('Encrypt config password', argName:'Password', required:false, type:String, args:1)
     cli.sf(longOpt:'startfrom', 'Start from last samples (Real-Time (1..60)min), OPTIONAL', argName:'Mins', required:false, type:int, args:1)
 
@@ -1293,7 +1739,7 @@ class VSphere2Metrics {
       if (opt.dc) {
         main.dumpCounters()
       } else if (opt.dm) {
-        main.dumpMetrics()
+        main.dumpMetrics(opt.dm)
       } else if (opt.pwd) {
         main.encryptPassword(opt.pwd)
       } else {

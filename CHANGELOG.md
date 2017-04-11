@@ -1,5 +1,14 @@
 # [Unreleased]
-- Added some Grafana templates (Graphite)
+
+# 1.6.0 (2017-04-11)
+- Changed the Graphite metric naming schema (breaking change)
+- Disk naming are now the actual ID's (breaking change)
+- Added Graphite and InfluxDB dumpMetrics output formats
+- Added VSAN Stats (dom, dom-objects, lsom, disks)
+- Added Resource Quick Stats
+- Migrate to yavijava
+- Self monitoring stats (prefix.vsphere2metrics)
+- Added some example Grafana templates (Graphite)
 
 # 1.5.3 (2016-04-01)
 - Add timing metrics on the collecting methods
