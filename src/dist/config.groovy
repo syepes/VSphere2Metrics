@@ -10,6 +10,7 @@ vcs.perf_max_samples       = 15                // Last 1 Minute (3x20s = 60s)
 
 destination.type          = 'Graphite'         // 'Graphite', 'InfluxDB', 'Both'
 destination.timezone      = 'Europe/Paris'
+destination.max_tries     = 60                 // Maximum attempts before trashing the buffered metrics
 
 // Graphite Settings
 graphite.host             = 'graphite-host'

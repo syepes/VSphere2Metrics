@@ -1,5 +1,9 @@
 # [Unreleased]
 
+# 1.6.1 (2017-06-03)
+- Fix build
+- Added configurable max_tries
+
 # 1.6.0 (2017-04-11)
 - Changed the Graphite metric naming schema (breaking change)
 - Disk naming are now the actual ID's (breaking change)

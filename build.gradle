@@ -1,15 +1,15 @@
 buildscript {
   dependencies {
-    classpath 'org.kordamp.gradle:stats-gradle-plugin:0.2.+',
-              'com.github.jengelman.gradle.plugins:shadow:1.+'
+    classpath 'com.github.jengelman.gradle.plugins:shadow:2.+',
+              'org.kordamp.gradle:stats-gradle-plugin:0.2.+'
   }
 }
 
 plugins {
-  id "org.kordamp.gradle.stats" version "0.2.0"
   id 'groovy'
   id 'distribution'
-  id 'com.github.johnrengelman.shadow' version '1.2.4'
+  id 'com.github.johnrengelman.shadow' version '2.0.0'
+  id "org.kordamp.gradle.stats" version "0.2.0"
 }
 
 def projectName = 'VSphere2Metrics'
@@ -18,7 +18,7 @@ description = "$projectName - ESXi Performance Metric Integration with Graphite 
 group = 'com.allthingsmonitoring.vmware.VSphere2Metrics'
 archivesBaseName = projectName.toLowerCase()
 distsDirName = 'dist'
-version = '1.6.0'
+version = '1.6.1'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2017 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
@@ -58,7 +58,7 @@ dependencies {
   compile 'org.codehaus.groovy:groovy:2.+',
           'org.codehaus.groovy:groovy-json:2.+',
           'commons-cli:commons-cli:1.+',
-          'org.slf4j:slf4j-api:1.+',
+          'org.slf4j:slf4j-api:1.7.+',
           'ch.qos.logback:logback-core:1.+',
           'ch.qos.logback:logback-classic:1.+',
           'org.fusesource.jansi:jansi:1.+',
@@ -66,7 +66,7 @@ dependencies {
           'com.xlson.groovycsv:groovycsv:1.+',
           'dom4j:dom4j:1.6.+',
           'com.github.syepes:MetricClient:master-SNAPSHOT',
-          'com.github.yavijava:yavijava:vsphere_6.5-SNAPSHOT',
+          'com.github.yavijava:yavijava:6.+',
           fileTree(dir: 'libs', include: '*.jar')
 
   compile 'org.codehaus.jsr166-mirror:jsr166y:1.7.+'

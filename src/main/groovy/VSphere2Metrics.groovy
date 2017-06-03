@@ -65,12 +65,16 @@ class VSphere2Metrics {
     log.info "Initialization: Class: ${this.class.name?.split('\\.')?.getAt(-1)} / Collecting samples: ${cfg?.vcs?.perf_max_samples} = ${cfg?.vcs?.perf_max_samples * 20}sec / Version: ${manifest?.getValue('Specification-Version')} / Built-Date: ${manifest?.getValue('Built-Date')}"
 
     if (cfg?.destination?.type?.toLowerCase() == 'graphite') {
-      mc = new MetricClient(server_host: cfg.graphite.host, server_port: cfg.graphite.port, prefix: cfg?.graphite?.prefix)
+      LinkedHashMap parms = [server_host:cfg.graphite.host, server_port:cfg.graphite.port, max_tries:cfg?.destination?.max_tries, prefix:cfg?.graphite?.prefix]
+      mc = new MetricClient(parms)
     } else if (cfg?.destination?.type?.toLowerCase() == 'influxdb') {
-      mc = new MetricClient(server_host: cfg.influxdb.host, server_port: cfg.influxdb.port, protocol: cfg.influxdb.protocol, server_auth: cfg.influxdb.auth)
+      LinkedHashMap parms = [server_host:cfg.influxdb.host, server_port:cfg.influxdb.port, max_tries:cfg?.destination?.max_tries, protocol:cfg.influxdb.protocol, server_auth:cfg.influxdb.auth]
+      mc = new MetricClient(parms)
     } else if (cfg?.destination?.type?.toLowerCase() == 'both') {
-      mcG = new MetricClient(server_host: cfg.graphite.host, server_port: cfg.graphite.port, prefix: cfg?.graphite?.prefix)
-      mcI = new MetricClient(server_host: cfg.influxdb.host, server_port: cfg.influxdb.port, protocol: cfg.influxdb.protocol, server_auth: cfg.influxdb.auth)
+      LinkedHashMap parms_graphite = [server_host:cfg.graphite.host, server_port:cfg.graphite.port, max_tries:cfg?.destination?.max_tries, prefix:cfg?.graphite?.prefix]
+      LinkedHashMap parms_influxdb = [server_host:cfg.influxdb.host, server_port:cfg.influxdb.port, max_tries:cfg?.destination?.max_tries, protocol:cfg.influxdb.protocol, server_auth:cfg.influxdb.auth]
+      mcG = new MetricClient(parms_graphite)
+      mcI = new MetricClient(parms_influxdb)
     } else {
       throw new Exception("Unknown configured destination: ${cfg?.destination?.type}")
     }
