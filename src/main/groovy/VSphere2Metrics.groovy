@@ -1047,7 +1047,7 @@ class VSphere2Metrics {
                 }
               }
 
-              BigDecimal mvalue = (ts.value.toString().isEmpty()) ? 0 : ts.value.toBigDecimal()
+              BigDecimal mvalue = (ts?.value?.size() == null || ts?.value?.size() == 0 || ts?.value.toString().isEmpty()) ? 0 : ts?.value?.toBigDecimal()
               Long mtimes = ts.key
 
               // Only send metrics if they are different than 0
@@ -1060,7 +1060,7 @@ class VSphere2Metrics {
             ts.value.each { event ->
               log.trace "Type:${hash.value['host_type']} / HostCluster:${hash.value['host_cluster']} / HostMode:${hash.value['host_mode']} / Host:${hash.value['host']} / VM:${node.key} / Event:${event.key} / Val:${event.value} / TS:${ts.key}"
               String mpath
-              BigDecimal mvalue = (event?.value?.toString()?.isEmpty()) ? 0 : event?.value?.toBigDecimal()
+              BigDecimal mvalue = (event?.value?.size() == null || event?.value?.size() == 0 || event?.value.toString().isEmpty()) ? 0 : event?.value?.toBigDecimal()
               if (hash.value['host_mode'] == 'clustered') {
                 mpath = "${hash.value['host_mode']}.${hash.value['host_cluster']}.${hash.value['host_type']}.${hash.value['host']}.${event.key}"
               } else {
