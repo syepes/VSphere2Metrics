@@ -8,8 +8,8 @@ buildscript {
 plugins {
   id 'groovy'
   id 'distribution'
-  id 'com.github.johnrengelman.shadow' version '2.0.0'
-  id "org.kordamp.gradle.stats" version "0.2.0"
+  id 'com.github.johnrengelman.shadow' version '2.0.3'
+  id "org.kordamp.gradle.stats" version "0.2.2"
 }
 
 def projectName = 'VSphere2Metrics'
@@ -55,12 +55,12 @@ repositories {
 }
 
 dependencies {
-  compile 'org.codehaus.groovy:groovy:2.5.+',
-          'org.codehaus.groovy:groovy-json:2.5.+',
+  compile 'org.codehaus.groovy:groovy:2.4.+',
+          'org.codehaus.groovy:groovy-json:2.4.+',
           'commons-cli:commons-cli:1.+',
           'org.slf4j:slf4j-api:1.7.+',
-          'ch.qos.logback:logback-core:1.+',
-          'ch.qos.logback:logback-classic:1.+',
+          'ch.qos.logback:logback-core:1.2.+',
+          'ch.qos.logback:logback-classic:1.2.+',
           'org.fusesource.jansi:jansi:1.+',
           'net.sf.opencsv:opencsv:2.+',
           'com.xlson.groovycsv:groovycsv:1.+',
@@ -74,9 +74,9 @@ dependencies {
             exclude module: "groovy-all"
           }
 
-  groovyDoc 'org.codehaus.groovy:groovy-groovydoc:2.+',
-            'org.codehaus.groovy:groovy-json:2.+',
-            'org.codehaus.groovy:groovy-ant:2.+'
+  groovyDoc 'org.codehaus.groovy:groovy-groovydoc:2.4.+',
+            'org.codehaus.groovy:groovy-json:2.4.+',
+            'org.codehaus.groovy:groovy-ant:2.4.+'
 
   testCompile 'org.spockframework:spock-core:1.0-groovy-2.4', {
     exclude module: 'groovy-all'
