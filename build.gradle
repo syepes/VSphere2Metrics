@@ -18,7 +18,7 @@ description = "$projectName - ESXi Performance Metric Integration with Graphite 
 group = 'com.allthingsmonitoring.vmware.VSphere2Metrics'
 archivesBaseName = projectName.toLowerCase()
 distsDirName = 'dist'
-version = '1.6.1'
+version = '1.6.2'
 
 def authorString = 'Sebastian YEPES FERNANDEZ (syepes@gmail.com)'
 def copyrightString = 'Copyright &#169; 2017 &#8211; Sebastian YEPES FERNANDEZ All Rights Reserved.'
