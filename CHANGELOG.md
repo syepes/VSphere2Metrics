@@ -1,5 +1,11 @@
 # [Unreleased]
 
+# 1.6.2 (2018-04-19)
+- Fix src build
+- Better handle null or bad metric values
+- Handle VSAN Histogram metrics
+- Added configurable vcs.collectors
+
 # 1.6.1 (2017-06-03)
 - Fix build
 - Added configurable max_tries
